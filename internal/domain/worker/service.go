@@ -70,13 +70,14 @@ type RemoteExecutor interface {
 type healthResponse struct {
 	OK  bool `json:"ok"`
 	LLM struct {
-		Fluxcode struct {
-			OK bool `json:"ok"`
-		} `json:"fluxcode"`
-		Deepseek struct {
-			OK bool `json:"ok"`
-		} `json:"deepseek"`
+		Fluxcode providerHealth `json:"fluxcode"`
+		Deepseek providerHealth `json:"deepseek"`
 	} `json:"llm"`
+}
+
+type providerHealth struct {
+	OK       bool  `json:"ok"`
+	Required *bool `json:"required"`
 }
 
 type authExchangeResponse struct {
@@ -249,12 +250,13 @@ func (s Service) buildRemoteDiagnoseCommand(server Server) string {
 	if err != nil {
 		return fmt.Sprintf("echo %q >&2; exit 1", err.Error())
 	}
+	healthCheckJS := `const ok=(p)=>p?.required===false||p?.ok===true;const run=async()=>{const res=await fetch("http://127.0.0.1:8080/healthz");const raw=await res.text();const data=JSON.parse(raw);if(!res.ok||!ok(data.llm?.fluxcode)||!ok(data.llm?.deepseek)){throw new Error(raw)}};run().catch(e=>{console.error(e.message);process.exit(1);});`
 	return strings.Join([]string{
 		"set -euo pipefail",
 		fmt.Sprintf("cd %s", server.Dir),
 		fmt.Sprintf("running=\"$(%s)\"", composeFallbackCommand("ps --services --status running")),
 		"for svc in redis worker-api worker-runner nginx certbot; do echo \"$running\" | grep -qx \"$svc\" || { echo \"服务未运行: $svc\" >&2; exit 1; }; done",
-		composeFallbackCommand("exec -T worker-api node -e 'const run=async()=>{const res=await fetch(\"http://127.0.0.1:8080/healthz\");const raw=await res.text();const data=JSON.parse(raw);if(!res.ok||data.ok!==true||data.llm?.fluxcode?.ok!==true||data.llm?.deepseek?.ok!==true){throw new Error(raw)}};run().catch(e=>{console.error(e.message);process.exit(1);});'"),
+		composeFallbackCommand(fmt.Sprintf("exec -T worker-api node -e %s", shellQuoteArg(healthCheckJS))),
 		"SYL_KEY=$(grep -E '^SYL_LISTING_KEYS=' .env | tail -n 1 | cut -d'=' -f2- | cut -d',' -f1 | cut -d':' -f2-)",
 		"[ -n \"$SYL_KEY\" ]",
 		composeFallbackCommand("exec -T -e SYL_KEY=\"$SYL_KEY\" worker-api node -e \"const run=async()=>{const exchange=await fetch('http://127.0.0.1:8080/v1/auth/exchange',{method:'POST',headers:{Authorization:'Bearer ' + process.env.SYL_KEY}});if(!exchange.ok) throw new Error('auth exchange failed');const j=await exchange.json();const rules=await fetch('http://127.0.0.1:8080/v1/rules/resolve?current=',{headers:{Authorization:'Bearer ' + j.access_token}});if(!rules.ok) throw new Error('rules resolve failed');const r=await rules.json();if(!r.rules_version) throw new Error('rules_version missing')};run().catch(e=>{console.error(e.message);process.exit(1);});\""),
@@ -315,7 +317,7 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 	if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/healthz", "", nil, &health); err != nil {
 		return fmt.Errorf("healthz 检查失败: %w", err)
 	}
-	if !health.OK || !health.LLM.Fluxcode.OK || !health.LLM.Deepseek.OK {
+	if !healthAcceptable(health) {
 		return fmt.Errorf("healthz 返回异常")
 	}
 
@@ -387,6 +389,17 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 		}
 	}
 	return fmt.Errorf("生成轮询超时")
+}
+
+func providerHealthy(p providerHealth) bool {
+	if p.Required != nil && !*p.Required {
+		return true
+	}
+	return p.OK
+}
+
+func healthAcceptable(h healthResponse) bool {
+	return providerHealthy(h.LLM.Fluxcode) && providerHealthy(h.LLM.Deepseek)
 }
 
 func (s Service) requestDownload(ctx context.Context, url, bearer string) error {

@@ -93,3 +93,47 @@ func TestDiagnoseExternal(t *testing.T) {
 		t.Fatalf("generate auth=%q", gotGenerateAuth)
 	}
 }
+
+func TestDiagnoseExternal_IgnoresOptionalProviderFailure(t *testing.T) {
+	var baseURL string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/healthz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tenant_id":"system","ok":false,"llm":{"fluxcode":{"ok":false,"required":false},"deepseek":{"ok":true,"required":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/exchange":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tenant_id":"syl","access_token":"token-1"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/rules/resolve":
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"up_to_date":    true,
+				"rules_version": "rules-syl-1",
+				"download_url":  baseURL + "/download/rules-syl-1",
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/rules/refresh":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/download/rules-syl-1":
+			_, _ = w.Write([]byte("tarball"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+	baseURL = ts.URL
+
+	svc := Service{
+		HTTPClient: ts.Client(),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := svc.DiagnoseExternal(ctx, DiagnoseExternalInput{
+		BaseURL:      ts.URL,
+		SYLKey:       "key-123",
+		WithGenerate: false,
+	}); err != nil {
+		t.Fatalf("DiagnoseExternal() error = %v", err)
+	}
+}

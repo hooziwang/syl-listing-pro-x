@@ -199,6 +199,26 @@ func TestDiagnoseRunsFullChecklist(t *testing.T) {
 	}
 }
 
+func TestDiagnoseCommandUsesRequiredAwareHealthCheck(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workerRepo, "worker.config.json"), []byte(`{"server":{"domain":"worker.aelus.tech"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := Service{WorkerRepo: workerRepo}
+	cmd := svc.buildRemoteDiagnoseCommand(DefaultServers()["syl-server"])
+	if strings.Contains(cmd, "data.llm?.fluxcode?.ok!==true||data.llm?.deepseek?.ok!==true") {
+		t.Fatalf("diagnose cmd should not hardcode provider ok checks: %s", cmd)
+	}
+	if !strings.Contains(cmd, "required===false") {
+		t.Fatalf("diagnose cmd should consider optional providers: %s", cmd)
+	}
+}
+
 func TestLogsUsesComposeFallback(t *testing.T) {
 	remote := &fakeRemote{}
 	svc := Service{

@@ -131,6 +131,177 @@ func TestServiceValidateMissingSectionFails(t *testing.T) {
 	}
 }
 
+func TestServiceValidateWorkflowNodesRequired(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	writeFile(t, filepath.Join(root, "tenants", "demo", "rules", "workflow.yaml"), `planning:
+  system_prompt: p
+  user_prompt: p
+judge:
+  system_prompt: j
+  user_prompt: j
+  ignore_messages: ["OK"]
+  skip_sections: ["search_terms"]
+translation:
+  system_prompt: t
+render:
+  keywords_item_template: "{{item}}"
+  bullets_item_template: "{{item}}"
+  bullets_separator: "\n\n"
+display_labels:
+  title: 标题
+  bullets: 五点描述
+  description: 产品描述
+  search_terms: 搜索词
+  category: 分类
+  keywords: 关键词
+`)
+	svc := Service{Root: root}
+	err := svc.Validate("demo")
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	if !strings.Contains(err.Error(), "workflow.yaml 缺少字段: nodes") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServiceValidateWorkflowNodeDependsOnExistingNode(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	writeFile(t, filepath.Join(root, "tenants", "demo", "rules", "workflow.yaml"), `planning:
+  system_prompt: p
+  user_prompt: p
+judge:
+  system_prompt: j
+  user_prompt: j
+  ignore_messages: ["OK"]
+  skip_sections: ["search_terms"]
+translation:
+  system_prompt: t
+render:
+  keywords_item_template: "{{item}}"
+  bullets_item_template: "{{item}}"
+  bullets_separator: "\n\n"
+display_labels:
+  title: 标题
+  bullets: 五点描述
+  description: 产品描述
+  search_terms: 搜索词
+  category: 分类
+  keywords: 关键词
+nodes:
+  - id: title_en
+    type: generate
+    section: title
+    output_to: title_en
+  - id: render_en
+    type: render
+    depends_on: [missing_node]
+    inputs:
+      title_en: title_en
+    template: en
+    output_to: en_markdown
+`)
+	svc := Service{Root: root}
+	err := svc.Validate("demo")
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	if !strings.Contains(err.Error(), "workflow.nodes[render_en].depends_on 引用了不存在的节点: missing_node") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServiceValidateWorkflowNodeOutputToMustBeUnique(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	writeFile(t, filepath.Join(root, "tenants", "demo", "rules", "workflow.yaml"), `planning:
+  system_prompt: p
+  user_prompt: p
+judge:
+  system_prompt: j
+  user_prompt: j
+  ignore_messages: ["OK"]
+  skip_sections: ["search_terms"]
+translation:
+  system_prompt: t
+render:
+  keywords_item_template: "{{item}}"
+  bullets_item_template: "{{item}}"
+  bullets_separator: "\n\n"
+display_labels:
+  title: 标题
+  bullets: 五点描述
+  description: 产品描述
+  search_terms: 搜索词
+  category: 分类
+  keywords: 关键词
+nodes:
+  - id: title_en
+    type: generate
+    section: title
+    output_to: shared_slot
+  - id: title_cn
+    type: translate
+    input_from: title_en
+    output_to: shared_slot
+`)
+	svc := Service{Root: root}
+	err := svc.Validate("demo")
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	if !strings.Contains(err.Error(), "workflow.nodes[title_cn].output_to 与 [title_en] 冲突: shared_slot") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServiceValidateRenderNodeInputsRequired(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	writeFile(t, filepath.Join(root, "tenants", "demo", "rules", "workflow.yaml"), `planning:
+  system_prompt: p
+  user_prompt: p
+judge:
+  system_prompt: j
+  user_prompt: j
+  ignore_messages: ["OK"]
+  skip_sections: ["search_terms"]
+translation:
+  system_prompt: t
+render:
+  keywords_item_template: "{{item}}"
+  bullets_item_template: "{{item}}"
+  bullets_separator: "\n\n"
+display_labels:
+  title: 标题
+  bullets: 五点描述
+  description: 产品描述
+  search_terms: 搜索词
+  category: 分类
+  keywords: 关键词
+nodes:
+  - id: title_en
+    type: generate
+    section: title
+    output_to: title_en
+  - id: render_en
+    type: render
+    depends_on: [title_en]
+    template: en
+    output_to: en_markdown
+`)
+	svc := Service{Root: root}
+	err := svc.Validate("demo")
+	if err == nil {
+		t.Fatal("Validate() expected error")
+	}
+	if !strings.Contains(err.Error(), "workflow.nodes[render_en].inputs 非法") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeTenantFixture(t *testing.T, root, tenant string) {
 	t.Helper()
 	base := filepath.Join(root, "tenants", tenant, "rules")
@@ -149,13 +320,23 @@ templates:
 `)
 	writeFile(t, filepath.Join(base, "input.yaml"), `file_discovery:
   marker: ===Listing Requirements===
-brand:
-  labels: ["品牌名"]
-  fallback: UnknownBrand
-keywords:
-  heading_aliases: ["关键词库"]
-category:
-  heading_aliases: ["分类"]
+fields:
+  - key: brand
+    type: scalar
+    capture: inline_label
+    labels: ["品牌名"]
+    fallback: UnknownBrand
+    fallback_from_h1_first_token: true
+  - key: keywords
+    type: list
+    capture: heading_section
+    heading_aliases: ["关键词库"]
+    min_count: 15
+    unique_required: true
+  - key: category
+    type: scalar
+    capture: heading_section
+    heading_aliases: ["分类"]
 `)
 	writeFile(t, filepath.Join(base, "workflow.yaml"), `planning:
   system_prompt: p
@@ -178,6 +359,86 @@ display_labels:
   search_terms: 搜索词
   category: 分类
   keywords: 关键词
+nodes:
+  - id: category_cn
+    type: translate
+    input_from: category
+    output_to: category_cn
+  - id: keywords_cn
+    type: translate
+    input_from: keywords
+    output_to: keywords_cn
+  - id: title_en
+    type: generate
+    section: title
+    output_to: title_en
+  - id: bullets_en
+    type: generate
+    section: bullets
+    output_to: bullets_en
+  - id: description_en
+    type: generate
+    section: description
+    output_to: description_en
+  - id: search_terms_en
+    type: derive
+    section: search_terms
+    output_to: search_terms_en
+  - id: quality_judge
+    type: judge
+    depends_on: [title_en, bullets_en, description_en, search_terms_en]
+    inputs:
+      title: title_en
+      bullets: bullets_en
+      description: description_en
+      search_terms: search_terms_en
+    output_to: judge_report_1
+  - id: title_cn
+    type: translate
+    depends_on: [title_en]
+    input_from: title_en
+    output_to: title_cn
+  - id: bullets_cn
+    type: translate
+    depends_on: [bullets_en]
+    input_from: bullets_en
+    output_to: bullets_cn
+  - id: description_cn
+    type: translate
+    depends_on: [description_en]
+    input_from: description_en
+    output_to: description_cn
+  - id: search_terms_cn
+    type: translate
+    depends_on: [search_terms_en]
+    input_from: search_terms_en
+    output_to: search_terms_cn
+  - id: render_en
+    type: render
+    depends_on: [title_en, bullets_en, description_en, search_terms_en]
+    inputs:
+      brand: brand
+      category_en: category
+      keywords_en: keywords
+      title_en: title_en
+      bullets_en: bullets_en
+      description_en: description_en
+      search_terms_en: search_terms_en
+    template: en
+    output_to: en_markdown
+  - id: render_cn
+    type: render
+    depends_on: [category_cn, keywords_cn, title_cn, bullets_cn, description_cn, search_terms_cn]
+    inputs:
+      brand: brand
+      category_cn: category_cn
+      keywords_cn: keywords_cn
+      title_cn: title_cn
+      bullets_cn: bullets_cn
+      description_cn: description_cn
+      search_terms_cn: search_terms_cn
+    template: cn
+    output_to: cn_markdown
 `)
 	writeFile(t, filepath.Join(base, "templates", "en.md.tmpl"), "# EN\n{{title_en}}\n")
 	writeFile(t, filepath.Join(base, "templates", "cn.md.tmpl"), "# CN\n{{title_cn}}\n")
