@@ -8,9 +8,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+func TestGenerateVersionFormat(t *testing.T) {
+	version := GenerateVersion("syl")
+	pattern := regexp.MustCompile(`^rules-syl-\d{8}-\d{6}-[0-9a-z]{6}$`)
+	if !pattern.MatchString(version) {
+		t.Fatalf("version format invalid: %q", version)
+	}
+	suffix := version[strings.LastIndex(version, "-")+1:]
+	if !regexp.MustCompile(`[a-z]`).MatchString(suffix) {
+		t.Fatalf("version suffix should contain letters, got %q", version)
+	}
+}
 
 func TestServiceValidate(t *testing.T) {
 	root := t.TempDir()
