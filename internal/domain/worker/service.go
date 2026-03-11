@@ -61,6 +61,27 @@ type DeployInput struct {
 	SkipDiagnose  bool
 }
 
+type CheckRemoteVersionInput struct {
+	BaseURL    string
+	AdminToken string
+}
+
+type RemoteVersionInfo struct {
+	OK            bool              `json:"ok"`
+	TenantID      string            `json:"tenant_id"`
+	Service       string            `json:"service"`
+	GitCommit     string            `json:"git_commit"`
+	BuildTime     string            `json:"build_time"`
+	DeployedAt    string            `json:"deployed_at"`
+	RulesVersions map[string]string `json:"rules_versions"`
+}
+
+type CheckRemoteVersionResult struct {
+	LocalGitCommit string
+	Remote         RemoteVersionInfo
+	UpToDate       bool
+}
+
 type RemoteExecutor interface {
 	Copy(ctx context.Context, server Server, src, dst string) error
 	Run(ctx context.Context, server Server, cmd string) error
@@ -175,7 +196,11 @@ func (s Service) Deploy(ctx context.Context, in DeployInput) error {
 			return err
 		}
 	}
-	cmd := s.buildRemoteDeployCommand(server, remoteTmp, in)
+	versionMeta, err := s.buildRuntimeVersionMetadata()
+	if err != nil {
+		return err
+	}
+	cmd := s.buildRemoteDeployCommand(server, remoteTmp, in, versionMeta)
 	if err := remote.Run(ctx, server, cmd); err != nil {
 		return err
 	}
@@ -203,7 +228,7 @@ func (s Service) Logs(ctx context.Context, in LogsInput) error {
 	return s.remote().Stream(ctx, server, cmd)
 }
 
-func (s Service) buildRemoteDeployCommand(server Server, remoteTmp string, in DeployInput) string {
+func (s Service) buildRemoteDeployCommand(server Server, remoteTmp string, in DeployInput, versionMeta string) string {
 	timeout := in.HTTPSTimeout
 	if timeout <= 0 {
 		timeout = 240
@@ -225,6 +250,8 @@ func (s Service) buildRemoteDeployCommand(server Server, remoteTmp string, in De
 		fmt.Sprintf("cd %s", server.Dir),
 		fmt.Sprintf("tar -xzf %s -C %s", remoteTmp, server.Dir),
 		fmt.Sprintf("rm -f %s", remoteTmp),
+		"mkdir -p data/runtime",
+		fmt.Sprintf("printf %%s %s > data/runtime/version.json", shellQuoteArg(versionMeta)),
 	}
 	if in.InstallDocker {
 		parts = append(parts, "if ! command -v docker >/dev/null 2>&1; then sudo apt-get update -y && sudo apt-get install -y docker.io docker-compose-v2 python3 && sudo systemctl enable --now docker; fi")
@@ -243,6 +270,33 @@ func (s Service) buildRemoteDeployCommand(server Server, remoteTmp string, in De
 	}
 	parts = append(parts, composeFallbackCommand("ps"))
 	return strings.Join(parts, "; ")
+}
+
+func (s Service) CheckRemoteVersion(ctx context.Context, in CheckRemoteVersionInput) (CheckRemoteVersionResult, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(in.BaseURL), "/")
+	if baseURL == "" {
+		return CheckRemoteVersionResult{}, fmt.Errorf("缺少 base-url")
+	}
+	if strings.TrimSpace(in.AdminToken) == "" {
+		return CheckRemoteVersionResult{}, fmt.Errorf("缺少 ADMIN_TOKEN")
+	}
+	localCommit, err := s.localGitCommitShort()
+	if err != nil {
+		return CheckRemoteVersionResult{}, err
+	}
+	var remote RemoteVersionInfo
+	if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/admin/version", in.AdminToken, nil, &remote); err != nil {
+		return CheckRemoteVersionResult{}, fmt.Errorf("读取远端版本失败: %w", err)
+	}
+	result := CheckRemoteVersionResult{
+		LocalGitCommit: localCommit,
+		Remote:         remote,
+		UpToDate:       strings.TrimSpace(remote.GitCommit) == localCommit,
+	}
+	if !result.UpToDate {
+		return result, fmt.Errorf("远端 worker 不是最新版本：本地 %s，远端 %s", localCommit, strings.TrimSpace(remote.GitCommit))
+	}
+	return result, nil
 }
 
 func (s Service) buildRemoteDiagnoseCommand(server Server) string {
@@ -580,6 +634,38 @@ func (s Service) loadWorkerConfig() (workerConfig, error) {
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+func (s Service) localGitCommitShort() (string, error) {
+	cmd := exec.Command("git", "-C", s.workerRepo(), "rev-parse", "--short", "HEAD")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("读取本地 worker git commit 失败: %s", strings.TrimSpace(string(out)))
+	}
+	commit := strings.TrimSpace(string(out))
+	if commit == "" {
+		return "", fmt.Errorf("本地 worker git commit 为空")
+	}
+	return commit, nil
+}
+
+func (s Service) buildRuntimeVersionMetadata() (string, error) {
+	commit, err := s.localGitCommitShort()
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	payload := map[string]string{
+		"service":     "syl-listing-worker",
+		"git_commit":  commit,
+		"build_time":  now,
+		"deployed_at": now,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func shellSingleQuote(input string) string {

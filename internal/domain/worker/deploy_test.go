@@ -83,12 +83,17 @@ func TestDeploy(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(workerRepo, "docker"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	runGit(t, workerRepo, "init")
+	runGit(t, workerRepo, "config", "user.email", "test@example.com")
+	runGit(t, workerRepo, "config", "user.name", "tester")
 	if err := os.WriteFile(filepath.Join(workerRepo, "worker.config.json"), []byte(`{"server":{"domain":"worker.aelus.tech"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(workerRepo, ".env"), []byte("ADMIN_TOKEN=x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	runGit(t, workerRepo, "add", "worker.config.json", ".env")
+	runGit(t, workerRepo, "commit", "-m", "init")
 	remote := &fakeRemote{}
 	svc := Service{
 		WorkerRepo: workerRepo,
@@ -151,12 +156,18 @@ func TestDeployWaitHTTPSUsesHostResolvedDomain(t *testing.T) {
 		SkipWaitHTTPS: false,
 		HTTPSTimeout:  120,
 		HTTPSInterval: 3,
-	})
+	}, `{"service":"syl-listing-worker","git_commit":"abc1234","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z"}`)
 	if strings.Contains(cmd, "python3 -c") {
 		t.Fatalf("deploy cmd should not invoke python3 inside container: %s", cmd)
 	}
 	if !strings.Contains(cmd, "/etc/letsencrypt/live/worker.aelus.tech/fullchain.pem") {
 		t.Fatalf("deploy cmd missing inline domain: %s", cmd)
+	}
+	if !strings.Contains(cmd, "mkdir -p data/runtime") {
+		t.Fatalf("deploy cmd missing runtime dir creation: %s", cmd)
+	}
+	if !strings.Contains(cmd, "data/runtime/version.json") {
+		t.Fatalf("deploy cmd missing version.json write: %s", cmd)
 	}
 }
 

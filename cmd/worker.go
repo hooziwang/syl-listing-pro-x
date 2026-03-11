@@ -11,6 +11,7 @@ func newWorkerCmd() *cobra.Command {
 	cmd.AddCommand(newWorkerPushEnvCmd())
 	cmd.AddCommand(newWorkerDiagnoseCmd())
 	cmd.AddCommand(newWorkerDiagnoseExternalCmd())
+	cmd.AddCommand(newWorkerCheckRemoteVersionCmd())
 	cmd.AddCommand(newWorkerLogsCmd())
 	return cmd
 }
