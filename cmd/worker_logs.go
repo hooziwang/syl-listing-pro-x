@@ -14,6 +14,13 @@ func newWorkerLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs",
 		Short: "查看远端 worker 日志",
+		Long: `通过 SSH 到远端执行 docker compose logs，实时查看 worker 日志。
+
+默认会持续跟随输出，除非传 --no-follow。可以用 --service 重复过滤容器，用 --since 和 --tail 控制时间范围和最近行数。`,
+		Example: `  syl-listing-pro-x worker logs --server syl-server
+  syl-listing-pro-x worker logs --server syl-server --service worker-api
+  syl-listing-pro-x worker logs --server syl-server --service worker-api --service nginx --tail 50 --since 10m
+  syl-listing-pro-x worker logs --server syl-server --service worker-api --tail 20 --since 1h --no-follow`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := worker.Service{
 				WorkerRepo: paths.WorkerRepo,

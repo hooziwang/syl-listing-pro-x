@@ -11,6 +11,10 @@ func newE2EListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "列出可用 e2e 用例",
+		Long: `列出当前支持的 e2e 用例名称。
+
+当前只包含 release-gate 和 architecture-gate，便于在跑 e2e run 之前先确认用例名。`,
+		Example: `  syl-listing-pro-x e2e list`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := e2e.NewDefaultService(paths)
 			for _, name := range svc.ListCases() {

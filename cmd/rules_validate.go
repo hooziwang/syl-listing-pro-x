@@ -12,6 +12,11 @@ func newRulesValidateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "校验租户规则",
+		Long: `校验 rules/tenants/<tenant>/rules 是否满足当前规则契约。
+
+会检查 package.yaml、input.yaml、workflow.yaml、sections/*.yaml 和模板文件是否齐全，并验证 workflow 节点依赖与输出槽位是否合法。
+成功时 stdout 会输出“规则校验通过: tenant=<tenant>”。`,
+		Example: `  syl-listing-pro-x rules validate --tenant syl`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := rules.Service{Root: paths.RulesRepo}
 			if err := svc.Validate(tenant); err != nil {

@@ -27,7 +27,7 @@ func (s Service) CheckRemoteVersion(ctx context.Context, in CheckRemoteVersionIn
 		}
 	}
 	if adminToken == "" {
-		return CheckRemoteVersionResult{}, fmt.Errorf("缺少 ADMIN_TOKEN")
+		return CheckRemoteVersionResult{}, fmt.Errorf("缺少 ADMIN_TOKEN：请传 --admin-token，或在 ~/.syl-listing-pro-x/.env 中设置 ADMIN_TOKEN=...")
 	}
 	localCommit, err := s.localGitCommitShort()
 	if err != nil {
@@ -57,7 +57,7 @@ func loadAdminTokenFromUserEnv() (string, error) {
 	f, err := os.Open(envPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("缺少 ADMIN_TOKEN，且未找到 %s", envPath)
+			return "", fmt.Errorf("缺少 ADMIN_TOKEN：既没有传 --admin-token，也未找到 ~/.syl-listing-pro-x/.env；可在 %s 中设置 ADMIN_TOKEN=...", envPath)
 		}
 		return "", fmt.Errorf("读取 %s 失败: %w", envPath, err)
 	}
@@ -81,7 +81,7 @@ func loadAdminTokenFromUserEnv() (string, error) {
 	if err := scanner.Err(); err != nil {
 		return "", fmt.Errorf("读取 %s 失败: %w", envPath, err)
 	}
-	return "", fmt.Errorf("缺少 ADMIN_TOKEN，且 %s 未定义 ADMIN_TOKEN", envPath)
+	return "", fmt.Errorf("缺少 ADMIN_TOKEN：既没有传 --admin-token，且 %s 未定义 ADMIN_TOKEN；请补充一行 ADMIN_TOKEN=...", envPath)
 }
 
 func (s Service) localGitCommitShort() (string, error) {

@@ -90,7 +90,7 @@ func (s Service) Run(ctx context.Context, in RunInput) (RunResult, error) {
 	case "architecture-gate":
 		return s.runArchitectureGate(ctx, in)
 	default:
-		return RunResult{}, fmt.Errorf("未知 e2e 用例: %s", in.CaseName)
+		return RunResult{}, fmt.Errorf("未知 e2e 用例: %s；可用值只有 release-gate 或 architecture-gate", in.CaseName)
 	}
 }
 
@@ -201,9 +201,19 @@ func (s Service) ensureArtifactsDir(id string) (string, error) {
 
 func (s Service) cliPath() (string, error) {
 	if strings.TrimSpace(s.CLIPath) != "" {
+		if _, err := os.Stat(s.CLIPath); err != nil {
+			if os.IsNotExist(err) {
+				return "", fmt.Errorf("未找到 syl-listing-pro CLI: %s；先构建或安装 CLI，并确保路径存在或 PATH 可找到 syl-listing-pro", s.CLIPath)
+			}
+			return "", fmt.Errorf("检查 syl-listing-pro CLI 失败: %w", err)
+		}
 		return s.CLIPath, nil
 	}
-	return exec.LookPath("syl-listing-pro")
+	path, err := exec.LookPath("syl-listing-pro")
+	if err != nil {
+		return "", fmt.Errorf("未找到 syl-listing-pro CLI：先构建或安装 CLI，并确保 PATH 中可执行 syl-listing-pro")
+	}
+	return path, nil
 }
 
 func (s Service) rulesRunner() RulesRunner {

@@ -198,6 +198,28 @@ func TestServicePackageUsesPrivateKeyBase64FromEnv(t *testing.T) {
 	}
 }
 
+func TestServicePackageMissingPrivateKeyMessageIncludesResolutionOrder(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+
+	svc := Service{Root: root}
+	_, err := svc.Package("demo", "rules-demo-20260310-000000-nokey", "")
+	if err == nil {
+		t.Fatal("Package() expected error")
+	}
+	for _, part := range []string{
+		"--private-key",
+		"SYL_LISTING_RULES_PRIVATE_KEY",
+		"SIGNING_PRIVATE_KEY_PEM",
+		"SIGNING_PRIVATE_KEY_BASE64",
+		"本地开发模式",
+	} {
+		if !strings.Contains(err.Error(), part) {
+			t.Fatalf("error %q missing %q", err, part)
+		}
+	}
+}
+
 func TestServicePublish(t *testing.T) {
 	root := t.TempDir()
 	writeTenantFixture(t, root, "demo")

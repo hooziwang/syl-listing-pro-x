@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -158,6 +159,55 @@ func TestCheckRemoteVersion_LoadsAdminTokenFromHomeEnv(t *testing.T) {
 	}
 	if gotAuth != "Bearer from-home-env" {
 		t.Fatalf("authorization=%q", gotAuth)
+	}
+}
+
+func TestCheckRemoteVersion_MissingAdminTokenMessageSuggestsHowToFix(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, workerRepo, "init")
+	runGit(t, workerRepo, "config", "user.email", "test@example.com")
+	runGit(t, workerRepo, "config", "user.name", "tester")
+	if err := os.WriteFile(filepath.Join(workerRepo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, workerRepo, "add", "README.md")
+	runGit(t, workerRepo, "commit", "-m", "init")
+
+	homeDir := filepath.Join(root, "home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if oldHome == "" {
+			_ = os.Unsetenv("HOME")
+			return
+		}
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	svc := Service{WorkerRepo: workerRepo}
+	_, err := svc.CheckRemoteVersion(context.Background(), CheckRemoteVersionInput{
+		BaseURL: "https://worker.example.test",
+	})
+	if err == nil {
+		t.Fatal("CheckRemoteVersion() expected error")
+	}
+	for _, part := range []string{
+		"--admin-token",
+		"~/.syl-listing-pro-x/.env",
+		"ADMIN_TOKEN=",
+	} {
+		if !strings.Contains(err.Error(), part) {
+			t.Fatalf("error %q missing %q", err, part)
+		}
 	}
 }
 

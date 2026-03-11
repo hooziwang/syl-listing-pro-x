@@ -14,6 +14,12 @@ func newWorkerCheckRemoteVersionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check-remote-version",
 		Short: "检查远端 worker 是否已部署为本地最新版本",
+		Long: `对比本地 worker git commit 与远端 /v1/admin/version，确认远端是否已部署为本地最新版本。
+
+成功时会打印本地 commit、远端 commit、远端 build_time、deployed_at 和远端 rules_versions。
+未传 --admin-token 时，会回退读取 ~/.syl-listing-pro-x/.env 中的 ADMIN_TOKEN。`,
+		Example: `  syl-listing-pro-x worker check-remote-version --base-url https://worker.example.test --admin-token <ADMIN_TOKEN>
+  syl-listing-pro-x worker check-remote-version --base-url https://worker.example.test`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := worker.Service{
 				WorkerRepo: paths.WorkerRepo,

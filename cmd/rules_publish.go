@@ -18,6 +18,13 @@ func newRulesPublishCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish",
 		Short: "打包并发布租户规则",
+		Long: `会先打包，再调用 worker 管理接口发布。
+
+发布目标是 <worker>/v1/admin/tenant-rules/publish，因此要求 worker 管理接口可达且 --admin-token 有效。
+成功时 stdout 输出已生效的 rules_version。`,
+		Example: `  syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
+  syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN> --worker https://worker.example.test
+  syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN> --private-key /abs/rules.pem`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := rules.Service{Root: paths.RulesRepo}
 			if version == "" {

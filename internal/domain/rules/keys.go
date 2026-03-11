@@ -35,7 +35,7 @@ func (s Service) resolvePrivateKeyPath(explicit string) (string, func(), error) 
 	if allowDevPrivateKey() {
 		return filepath.Join(s.Root, "keys", "rules_private.pem"), func() {}, nil
 	}
-	return "", func() {}, fmt.Errorf("缺少私钥：请传 --private-key，或设置 %s / %s / %s，或显式开启 %s=1", privateKeyPathEnv, privateKeyPEMEnv, privateKeyBase64Env, allowDevPrivateKeyEnv)
+	return "", func() {}, fmt.Errorf("缺少私钥：先传 --private-key；如果不想显式传参，可依次设置 %s / %s / %s；只有本地开发模式才允许显式开启 %s=1 后回退到仓库内默认私钥", privateKeyPathEnv, privateKeyPEMEnv, privateKeyBase64Env, allowDevPrivateKeyEnv)
 }
 
 func writeTempPrivateKeyFile(content string) (string, func(), error) {
@@ -68,7 +68,7 @@ func (s Service) validatePrivateKeyPath(privateKeyPath string) error {
 		return err
 	}
 	if samePath && !allowDevPrivateKey() {
-		return fmt.Errorf("仓库内默认私钥仅允许本地开发模式使用；GitHub Actions / CI 必须通过 %s 或 %s 注入，或在本地显式设置 %s=1 后重试", privateKeyPEMEnv, privateKeyBase64Env, allowDevPrivateKeyEnv)
+		return fmt.Errorf("仓库内默认私钥仅允许本地开发模式使用；GitHub Actions / CI 必须通过 %s 或 %s 注入；如果当前只是本地调试，请显式设置 %s=1 后重试", privateKeyPEMEnv, privateKeyBase64Env, allowDevPrivateKeyEnv)
 	}
 	return nil
 }

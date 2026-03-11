@@ -16,6 +16,13 @@ func newWorkerDiagnoseExternalCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diagnose-external",
 		Short: "对外诊断 worker 接口",
+		Long: `从外部对 worker HTTP 接口做黑盒诊断。
+
+默认会检查 /healthz、/v1/auth/exchange、/v1/rules/resolve、/v1/rules/refresh 和规则下载链路；如果传 --with-generate，还会额外发起一次真实生成并轮询任务结果。
+这个命令不会改远端代码，但会访问真实 worker 服务和真实租户规则。`,
+		Example: `  syl-listing-pro-x worker diagnose-external --key <SYL_LISTING_KEY>
+  syl-listing-pro-x worker diagnose-external --base-url https://worker.example.test --key <SYL_LISTING_KEY>
+  syl-listing-pro-x worker diagnose-external --key <SYL_LISTING_KEY> --with-generate`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := worker.Service{}
 			return svc.DiagnoseExternal(cmd.Context(), worker.DiagnoseExternalInput{

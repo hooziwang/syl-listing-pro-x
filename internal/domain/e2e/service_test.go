@@ -274,3 +274,45 @@ func containsAll(s string, parts ...string) bool {
 	}
 	return true
 }
+
+func TestRunUnknownCaseErrorMentionsAvailableCases(t *testing.T) {
+	svc := Service{}
+	_, err := svc.Run(context.Background(), RunInput{CaseName: "mystery-gate"})
+	if err == nil {
+		t.Fatal("Run() expected error")
+	}
+	if got := err.Error(); !containsAll(got, "未知 e2e 用例", "release-gate", "architecture-gate") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunMissingCLIMessageSuggestsBuildOrInstall(t *testing.T) {
+	root := t.TempDir()
+	inputPath := filepath.Join(root, "demo.md")
+	outDir := filepath.Join(root, "out")
+	if err := os.WriteFile(inputPath, []byte("demo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := Service{
+		CLIPath:       filepath.Join(root, "missing-syl-listing-pro"),
+		ArtifactsRoot: filepath.Join(root, "artifacts"),
+		RulesRunner:   &fakeRulesRunner{},
+		WorkerRunner:  &fakeWorkerRunner{},
+	}
+	_, err := svc.Run(context.Background(), RunInput{
+		CaseName:   "release-gate",
+		Tenant:     "syl",
+		WorkerURL:  "https://worker.example.test",
+		SYLKey:     "key",
+		AdminToken: "admin",
+		InputPath:  inputPath,
+		OutputDir:  outDir,
+	})
+	if err == nil {
+		t.Fatal("Run() expected error")
+	}
+	if got := err.Error(); !containsAll(got, "syl-listing-pro", "先构建或安装 CLI", "PATH") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

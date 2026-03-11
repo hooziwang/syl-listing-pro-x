@@ -20,6 +20,13 @@ func newE2ERunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "执行 e2e 用例",
+		Long: `执行真实发布验收。会先发布规则，再诊断 worker，最后调用 syl-listing-pro。
+
+这个命令依赖 PATH 中可执行的 syl-listing-pro，并会在运行时把 CLI stdout、stderr 和 verbose 日志写入 artifacts 目录。stdout 只打印 artifacts 目录路径。
+可用用例：release-gate, architecture-gate。`,
+		Example: `  syl-listing-pro-x e2e run --case release-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --input /abs/demo.md --out /abs/out
+  syl-listing-pro-x e2e run --case architecture-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --private-key /abs/rules.pem --input /abs/demo.md --out /abs/out
+  syl-listing-pro-x e2e run --case release-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --input /abs/demo.md --out /abs/out --artifacts-id release-gate-20260311`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := e2e.NewDefaultService(paths)
 			result, err := svc.Run(cmd.Context(), e2e.RunInput{
