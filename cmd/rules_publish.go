@@ -43,8 +43,8 @@ func newRulesPublishCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&tenant, "tenant", "", "租户 ID")
 	cmd.Flags().StringVar(&version, "version", "", "规则版本，不传则自动生成")
-	cmd.Flags().StringVar(&privateKey, "private-key", filepathOrDefault(paths.RulesRepo, "keys/rules_private.pem"), "签名私钥路径")
-	cmd.Flags().StringVar(&workerURL, "worker", "https://worker.aelus.tech", "worker 地址")
+	cmd.Flags().StringVar(&privateKey, "private-key", "", "签名私钥路径；不传则按环境变量或开发模式解析")
+	cmd.Flags().StringVar(&workerURL, "worker", paths.WorkerURL, "worker 地址")
 	cmd.Flags().StringVar(&adminToken, "admin-token", "", "管理员令牌")
 	_ = cmd.MarkFlagRequired("tenant")
 	_ = cmd.MarkFlagRequired("admin-token")

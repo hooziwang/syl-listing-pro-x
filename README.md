@@ -8,6 +8,8 @@
 - `worker`：worker 部署、诊断、`.env` 下发、日志
 - `e2e`：发版前真实 LLM 端到端验收
 
+跨仓契约、worker API 和 `e2e` 覆盖点矩阵见 [docs/contract-matrix.md](/Users/wxy/syl-listing-pro/docs/contract-matrix.md)。
+
 ## 默认路径
 
 程序默认直接操作以下目录：
@@ -20,6 +22,7 @@
 - `SYL_LISTING_PRO_WORKSPACE_ROOT`
 - `SYL_LISTING_PRO_RULES_REPO`
 - `SYL_LISTING_PRO_WORKER_REPO`
+- `SYL_LISTING_WORKER_URL`
 
 ## 构建
 
@@ -65,7 +68,16 @@ syl-listing-pro-x worker logs --server syl-server --service worker-api --tail 20
 ```bash
 syl-listing-pro-x e2e list
 syl-listing-pro-x e2e run --case release-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --input /abs/demo.md --out /abs/out
+syl-listing-pro-x e2e run --case architecture-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --private-key /abs/rules.pem --input /abs/demo.md --out /abs/out
 ```
+
+说明：
+
+- `release-gate` 用于维持真实生成链路与核心产物校验。
+- `architecture-gate` 用于验证工程治理类改动，例如显式私钥来源、worker 地址透传和 artifact 完整性。
+- `architecture-gate` 不传 `--private-key` 时，会继续按工程侧优先级解析私钥来源：
+  `SYL_LISTING_RULES_PRIVATE_KEY` -> `SIGNING_PRIVATE_KEY_PEM` -> `SIGNING_PRIVATE_KEY_BASE64` -> 显式开发模式。
+- GitHub Actions / CI 的正式方案是注入 `SIGNING_PRIVATE_KEY_PEM`；`SIGNING_PRIVATE_KEY_BASE64` 仅保留兼容。
 
 ## 架构重构验收
 
@@ -84,3 +96,4 @@ SYL_LISTING_PRO_RULES_REPO=/Users/wxy/syl-listing-pro/rules /Users/wxy/syl-listi
 - `cli` 测试与构建通过
 - `rules validate/package/publish` 通过
 - `e2e run --case release-gate` 真实跑通
+- `e2e run --case architecture-gate` 对工程治理改动给出附加验收

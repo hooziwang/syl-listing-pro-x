@@ -28,6 +28,9 @@ func TestDefaultPaths(t *testing.T) {
 	if cfg.RulesRepo != "/Users/wxy/syl-listing-pro/rules" {
 		t.Fatalf("RulesRepo=%q", cfg.RulesRepo)
 	}
+	if cfg.WorkerURL != "https://worker.aelus.tech" {
+		t.Fatalf("WorkerURL=%q", cfg.WorkerURL)
+	}
 }
 
 func TestDefaultPathsUsesEnvOverride(t *testing.T) {
@@ -60,12 +63,16 @@ func TestDefaultPathsIgnoresBlankEnvOverride(t *testing.T) {
 func TestDefaultPathsUsesPerRepoOverrides(t *testing.T) {
 	t.Setenv("SYL_LISTING_PRO_WORKER_REPO", "/tmp/custom-worker")
 	t.Setenv("SYL_LISTING_PRO_RULES_REPO", "/tmp/custom-rules")
+	t.Setenv("SYL_LISTING_WORKER_URL", "https://worker.example.test/")
 	cfg := DefaultPaths()
 	if cfg.WorkerRepo != "/tmp/custom-worker" {
 		t.Fatalf("WorkerRepo=%q", cfg.WorkerRepo)
 	}
 	if cfg.RulesRepo != "/tmp/custom-rules" {
 		t.Fatalf("RulesRepo=%q", cfg.RulesRepo)
+	}
+	if cfg.WorkerURL != "https://worker.example.test" {
+		t.Fatalf("WorkerURL=%q", cfg.WorkerURL)
 	}
 }
 

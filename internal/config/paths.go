@@ -10,7 +10,10 @@ type Paths struct {
 	WorkspaceRoot string
 	WorkerRepo    string
 	RulesRepo     string
+	WorkerURL     string
 }
+
+const defaultWorkerURL = "https://worker.aelus.tech"
 
 func DefaultPaths() Paths {
 	root := "/Users/wxy/syl-listing-pro"
@@ -25,6 +28,10 @@ func DefaultPaths() Paths {
 	if envRules := strings.TrimSpace(os.Getenv("SYL_LISTING_PRO_RULES_REPO")); envRules != "" {
 		rulesRepo = envRules
 	}
+	workerURL := strings.TrimRight(strings.TrimSpace(os.Getenv("SYL_LISTING_WORKER_URL")), "/")
+	if workerURL == "" {
+		workerURL = defaultWorkerURL
+	}
 	if worktreeName, ok := detectCurrentWorktreeName(); ok {
 		if candidate := filepath.Join(root, "worker", ".worktrees", worktreeName); dirExists(candidate) && strings.TrimSpace(os.Getenv("SYL_LISTING_PRO_WORKER_REPO")) == "" {
 			workerRepo = candidate
@@ -37,6 +44,7 @@ func DefaultPaths() Paths {
 		WorkspaceRoot: root,
 		WorkerRepo:    workerRepo,
 		RulesRepo:     rulesRepo,
+		WorkerURL:     workerURL,
 	}
 }
 

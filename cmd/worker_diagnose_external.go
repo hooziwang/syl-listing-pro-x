@@ -27,7 +27,7 @@ func newWorkerDiagnoseExternalCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&baseURL, "base-url", "https://worker.aelus.tech", "worker 对外地址")
+	cmd.Flags().StringVar(&baseURL, "base-url", paths.WorkerURL, "worker 对外地址")
 	cmd.Flags().StringVar(&sylKey, "key", "", "SYL_LISTING_KEY")
 	cmd.Flags().BoolVar(&withGenerate, "with-generate", false, "额外执行一次生成链路检查")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "生成轮询超时")

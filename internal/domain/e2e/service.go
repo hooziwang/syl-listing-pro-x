@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,9 +18,10 @@ import (
 )
 
 type PublishRulesInput struct {
-	Tenant     string
-	WorkerURL  string
-	AdminToken string
+	Tenant         string
+	WorkerURL      string
+	AdminToken     string
+	PrivateKeyPath string
 }
 
 type DiagnoseWorkerInput struct {
@@ -43,19 +45,28 @@ type Service struct {
 }
 
 type RunInput struct {
-	CaseName    string
-	Tenant      string
-	SYLKey      string
-	AdminToken  string
-	InputPath   string
-	OutputDir   string
-	WorkerURL   string
-	ArtifactsID string
+	CaseName       string
+	Tenant         string
+	SYLKey         string
+	AdminToken     string
+	PrivateKeyPath string
+	InputPath      string
+	OutputDir      string
+	WorkerURL      string
+	ArtifactsID    string
 }
 
 type RunResult struct {
 	ArtifactsDir string
 	OutputFiles  []string
+}
+
+type architectureSummary struct {
+	CaseName       string   `json:"case_name"`
+	Tenant         string   `json:"tenant"`
+	WorkerURL      string   `json:"worker_url"`
+	PrivateKeyPath string   `json:"private_key_path,omitempty"`
+	OutputFiles    []string `json:"output_files"`
 }
 
 func NewDefaultService(paths config.Paths) Service {
@@ -69,27 +80,38 @@ func NewDefaultService(paths config.Paths) Service {
 }
 
 func (s Service) ListCases() []string {
-	return []string{"release-gate"}
+	return []string{"release-gate", "architecture-gate"}
 }
 
 func (s Service) Run(ctx context.Context, in RunInput) (RunResult, error) {
 	switch strings.TrimSpace(in.CaseName) {
 	case "", "release-gate":
 		return s.runReleaseGate(ctx, in)
+	case "architecture-gate":
+		return s.runArchitectureGate(ctx, in)
 	default:
 		return RunResult{}, fmt.Errorf("未知 e2e 用例: %s", in.CaseName)
 	}
 }
 
 func (s Service) runReleaseGate(ctx context.Context, in RunInput) (RunResult, error) {
+	return s.runGate(ctx, in, false)
+}
+
+func (s Service) runArchitectureGate(ctx context.Context, in RunInput) (RunResult, error) {
+	return s.runGate(ctx, in, true)
+}
+
+func (s Service) runGate(ctx context.Context, in RunInput, withArchitectureSummary bool) (RunResult, error) {
 	artifactDir, err := s.ensureArtifactsDir(in.ArtifactsID)
 	if err != nil {
 		return RunResult{}, err
 	}
 	if err := s.rulesRunner().Publish(ctx, PublishRulesInput{
-		Tenant:     in.Tenant,
-		WorkerURL:  in.WorkerURL,
-		AdminToken: in.AdminToken,
+		Tenant:         in.Tenant,
+		WorkerURL:      in.WorkerURL,
+		AdminToken:     in.AdminToken,
+		PrivateKeyPath: in.PrivateKeyPath,
 	}); err != nil {
 		return RunResult{}, err
 	}
@@ -138,6 +160,20 @@ func (s Service) runReleaseGate(ctx context.Context, in RunInput) (RunResult, er
 	}
 	if err := validateReleaseGateOutputs(files); err != nil {
 		return RunResult{}, err
+	}
+	if withArchitectureSummary {
+		if err := validateArchitectureGateArtifacts(artifactDir); err != nil {
+			return RunResult{}, err
+		}
+		if err := writeArchitectureSummary(filepath.Join(artifactDir, "architecture-summary.json"), architectureSummary{
+			CaseName:       "architecture-gate",
+			Tenant:         in.Tenant,
+			WorkerURL:      in.WorkerURL,
+			PrivateKeyPath: in.PrivateKeyPath,
+			OutputFiles:    files,
+		}); err != nil {
+			return RunResult{}, err
+		}
 	}
 	return RunResult{
 		ArtifactsDir: artifactDir,
@@ -218,6 +254,29 @@ func validateReleaseGateOutputs(files []string) error {
 	return validateEnglishSearchTermsLowercase(enMarkdown)
 }
 
+func validateArchitectureGateArtifacts(artifactDir string) error {
+	required := []string{
+		"cli.verbose.ndjson",
+		"cli.stdout.log",
+		"cli.stderr.log",
+	}
+	for _, name := range required {
+		path := filepath.Join(artifactDir, name)
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("缺少 architecture-gate artifacts: %s", path)
+		}
+	}
+	return nil
+}
+
+func writeArchitectureSummary(path string, summary architectureSummary) error {
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
 func validateEnglishSearchTermsLowercase(path string) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -250,8 +309,7 @@ type defaultRulesRunner struct {
 func (r defaultRulesRunner) Publish(ctx context.Context, in PublishRulesInput) error {
 	svc := drules.Service{Root: r.root}
 	version := drules.GenerateVersion(in.Tenant)
-	privateKey := filepath.Join(r.root, "keys", "rules_private.pem")
-	if _, err := svc.Package(in.Tenant, version, privateKey); err != nil {
+	if _, err := svc.Package(in.Tenant, version, in.PrivateKeyPath); err != nil {
 		return err
 	}
 	_, err := svc.Publish(ctx, drules.PublishInput{

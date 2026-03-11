@@ -2,6 +2,7 @@ package rules
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -73,6 +74,130 @@ func TestServicePackage(t *testing.T) {
 	}
 }
 
+func TestServicePackageRejectsBundledDevKeyWithoutExplicitOptIn(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := filepath.Join(root, "keys", "rules_private.pem")
+	mkdirAll(t, filepath.Dir(keyPath))
+	writeFile(t, keyPath, mustReadFile(t, generatePrivateKey(t, root)))
+
+	svc := Service{Root: root}
+	_, err := svc.Package("demo", "rules-demo-20260310-000000-devkey", keyPath)
+	if err == nil {
+		t.Fatal("Package() expected error")
+	}
+	if !strings.Contains(err.Error(), "开发模式") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServicePackageRejectsBundledDevKeySymlinkWithoutExplicitOptIn(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := filepath.Join(root, "keys", "rules_private.pem")
+	mkdirAll(t, filepath.Dir(keyPath))
+	writeFile(t, keyPath, mustReadFile(t, generatePrivateKey(t, root)))
+
+	symlinkPath := filepath.Join(root, "external-rules-private.pem")
+	if err := os.Symlink(keyPath, symlinkPath); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	svc := Service{Root: root}
+	_, err := svc.Package("demo", "rules-demo-20260310-000000-devlink", symlinkPath)
+	if err == nil {
+		t.Fatal("Package() expected error")
+	}
+	if !strings.Contains(err.Error(), "开发模式") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServicePackageAllowsBundledDevKeyWithExplicitOptIn(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := filepath.Join(root, "keys", "rules_private.pem")
+	mkdirAll(t, filepath.Dir(keyPath))
+	writeFile(t, keyPath, mustReadFile(t, generatePrivateKey(t, root)))
+	t.Setenv("SYL_LISTING_ALLOW_DEV_PRIVATE_KEY", "1")
+
+	svc := Service{Root: root}
+	out, err := svc.Package("demo", "rules-demo-20260310-000000-devoptin", keyPath)
+	if err != nil {
+		t.Fatalf("Package() error = %v", err)
+	}
+	if _, err := os.Stat(out.ManifestPath); err != nil {
+		t.Fatalf("manifest missing: %v", err)
+	}
+}
+
+func TestServicePackageRejectsBundledDevKeyInCI(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := filepath.Join(root, "keys", "rules_private.pem")
+	mkdirAll(t, filepath.Dir(keyPath))
+	writeFile(t, keyPath, mustReadFile(t, generatePrivateKey(t, root)))
+	t.Setenv("SYL_LISTING_ALLOW_DEV_PRIVATE_KEY", "1")
+	t.Setenv("GITHUB_ACTIONS", "true")
+
+	svc := Service{Root: root}
+	_, err := svc.Package("demo", "rules-demo-20260310-000000-devci", keyPath)
+	if err == nil {
+		t.Fatal("Package() expected error")
+	}
+	if !strings.Contains(err.Error(), "GitHub Actions / CI") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServicePackageUsesPrivateKeyFromEnv(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := generatePrivateKey(t, root)
+	t.Setenv("SYL_LISTING_RULES_PRIVATE_KEY", keyPath)
+
+	svc := Service{Root: root}
+	out, err := svc.Package("demo", "rules-demo-20260310-000000-envkey", "")
+	if err != nil {
+		t.Fatalf("Package() error = %v", err)
+	}
+	if _, err := os.Stat(out.ManifestPath); err != nil {
+		t.Fatalf("manifest missing: %v", err)
+	}
+}
+
+func TestServicePackageUsesPrivateKeyPEMFromEnv(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := generatePrivateKey(t, root)
+	t.Setenv("SIGNING_PRIVATE_KEY_PEM", mustReadFile(t, keyPath))
+
+	svc := Service{Root: root}
+	out, err := svc.Package("demo", "rules-demo-20260310-000000-envpem", "")
+	if err != nil {
+		t.Fatalf("Package() error = %v", err)
+	}
+	if _, err := os.Stat(out.ManifestPath); err != nil {
+		t.Fatalf("manifest missing: %v", err)
+	}
+}
+
+func TestServicePackageUsesPrivateKeyBase64FromEnv(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := generatePrivateKey(t, root)
+	t.Setenv("SIGNING_PRIVATE_KEY_BASE64", base64.StdEncoding.EncodeToString([]byte(mustReadFile(t, keyPath))))
+
+	svc := Service{Root: root}
+	out, err := svc.Package("demo", "rules-demo-20260310-000000-envb64", "")
+	if err != nil {
+		t.Fatalf("Package() error = %v", err)
+	}
+	if _, err := os.Stat(out.ManifestPath); err != nil {
+		t.Fatalf("manifest missing: %v", err)
+	}
+}
+
 func TestServicePublish(t *testing.T) {
 	root := t.TempDir()
 	writeTenantFixture(t, root, "demo")
@@ -125,6 +250,59 @@ func TestServicePublish(t *testing.T) {
 	}
 	if pkg.ManifestPath == "" {
 		t.Fatal("package output should not be empty")
+	}
+}
+
+func TestServicePublishRejectsManifestTenantVersionMismatch(t *testing.T) {
+	root := t.TempDir()
+	writeTenantFixture(t, root, "demo")
+	keyPath := generatePrivateKey(t, root)
+
+	svc := Service{Root: root}
+	pkg, err := svc.Package("demo", "rules-demo-20260310-000002-cccccc", keyPath)
+	if err != nil {
+		t.Fatalf("Package() error = %v", err)
+	}
+
+	data, err := os.ReadFile(pkg.ManifestPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	manifest.RulesVersion = "rules-demo-20260310-999999-wrong"
+	updated, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(pkg.ManifestPath, updated, 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	var called bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"demo","rules_version":"rules-demo-20260310-000002-cccccc"}`))
+	}))
+	defer ts.Close()
+
+	_, err = svc.Publish(context.Background(), PublishInput{
+		Tenant:     "demo",
+		Version:    "rules-demo-20260310-000002-cccccc",
+		WorkerURL:  ts.URL,
+		AdminToken: "token-123",
+	})
+	if err == nil {
+		t.Fatal("Publish() expected error")
+	}
+	if !strings.Contains(err.Error(), "manifest") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Fatal("Publish() should fail before remote request")
 	}
 }
 
@@ -483,4 +661,13 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
 }
