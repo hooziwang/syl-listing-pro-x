@@ -8,7 +8,13 @@
 - `worker`：worker 部署、诊断、`.env` 下发、日志
 - `e2e`：发版前真实 LLM 端到端验收
 
-跨仓契约、worker API 和 `e2e` 覆盖点矩阵见 [docs/contract-matrix.md](/Users/wxy/syl-listing-pro/docs/contract-matrix.md)。
+本 README 维护 `syl-listing-pro-x` 自身的 `rules`、`worker`、`e2e` 工程入口。
+
+跨仓内容分工：
+
+- 规则契约见 `rules/README.md`
+- worker 服务接口与运行模型见 `worker/README.md`
+- 终端 CLI 使用入口见 `cli/README.md`
 
 ## 默认路径
 
