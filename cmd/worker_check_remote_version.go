@@ -53,7 +53,6 @@ func newWorkerCheckRemoteVersionCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&baseURL, "base-url", "https://worker.aelus.tech", "worker 地址")
-	cmd.Flags().StringVar(&adminToken, "admin-token", "", "ADMIN_TOKEN")
-	_ = cmd.MarkFlagRequired("admin-token")
+	cmd.Flags().StringVar(&adminToken, "admin-token", "", "ADMIN_TOKEN，默认从 ~/.syl-listing-pro-x/.env 读取")
 	return cmd
 }

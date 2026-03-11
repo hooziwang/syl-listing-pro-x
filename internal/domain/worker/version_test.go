@@ -101,6 +101,66 @@ func TestCheckRemoteVersion_Mismatch(t *testing.T) {
 	}
 }
 
+func TestCheckRemoteVersion_LoadsAdminTokenFromHomeEnv(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, workerRepo, "init")
+	runGit(t, workerRepo, "config", "user.email", "test@example.com")
+	runGit(t, workerRepo, "config", "user.name", "tester")
+	if err := os.WriteFile(filepath.Join(workerRepo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, workerRepo, "add", "README.md")
+	runGit(t, workerRepo, "commit", "-m", "init")
+	localCommit := runGit(t, workerRepo, "rev-parse", "--short", "HEAD")
+
+	homeDir := filepath.Join(root, "home")
+	if err := os.MkdirAll(filepath.Join(homeDir, ".syl-listing-pro-x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(homeDir, ".syl-listing-pro-x", ".env"), []byte("ADMIN_TOKEN=from-home-env\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", homeDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if oldHome == "" {
+			_ = os.Unsetenv("HOME")
+			return
+		}
+		_ = os.Setenv("HOME", oldHome)
+	}()
+
+	var gotAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"admin","service":"syl-listing-worker","git_commit":"` + localCommit + `","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z","rules_versions":{"syl":"rules-syl-1"}}`))
+	}))
+	defer ts.Close()
+
+	svc := Service{
+		HTTPClient: ts.Client(),
+		WorkerRepo: workerRepo,
+	}
+
+	_, err := svc.CheckRemoteVersion(context.Background(), CheckRemoteVersionInput{
+		BaseURL: ts.URL,
+	})
+	if err != nil {
+		t.Fatalf("CheckRemoteVersion() error = %v", err)
+	}
+	if gotAuth != "Bearer from-home-env" {
+		t.Fatalf("authorization=%q", gotAuth)
+	}
+}
+
 func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)

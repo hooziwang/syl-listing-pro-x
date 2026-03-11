@@ -2,6 +2,7 @@ package worker
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -277,7 +278,15 @@ func (s Service) CheckRemoteVersion(ctx context.Context, in CheckRemoteVersionIn
 	if baseURL == "" {
 		return CheckRemoteVersionResult{}, fmt.Errorf("缺少 base-url")
 	}
-	if strings.TrimSpace(in.AdminToken) == "" {
+	adminToken := strings.TrimSpace(in.AdminToken)
+	if adminToken == "" {
+		var err error
+		adminToken, err = loadAdminTokenFromUserEnv()
+		if err != nil {
+			return CheckRemoteVersionResult{}, err
+		}
+	}
+	if adminToken == "" {
 		return CheckRemoteVersionResult{}, fmt.Errorf("缺少 ADMIN_TOKEN")
 	}
 	localCommit, err := s.localGitCommitShort()
@@ -285,7 +294,7 @@ func (s Service) CheckRemoteVersion(ctx context.Context, in CheckRemoteVersionIn
 		return CheckRemoteVersionResult{}, err
 	}
 	var remote RemoteVersionInfo
-	if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/admin/version", in.AdminToken, nil, &remote); err != nil {
+	if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/admin/version", adminToken, nil, &remote); err != nil {
 		return CheckRemoteVersionResult{}, fmt.Errorf("读取远端版本失败: %w", err)
 	}
 	result := CheckRemoteVersionResult{
@@ -297,6 +306,42 @@ func (s Service) CheckRemoteVersion(ctx context.Context, in CheckRemoteVersionIn
 		return result, fmt.Errorf("远端 worker 不是最新版本：本地 %s，远端 %s", localCommit, strings.TrimSpace(remote.GitCommit))
 	}
 	return result, nil
+}
+
+func loadAdminTokenFromUserEnv() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("读取用户目录失败: %w", err)
+	}
+	envPath := filepath.Join(home, ".syl-listing-pro-x", ".env")
+	f, err := os.Open(envPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("缺少 ADMIN_TOKEN，且未找到 %s", envPath)
+		}
+		return "", fmt.Errorf("读取 %s 失败: %w", envPath, err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, "ADMIN_TOKEN=") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "ADMIN_TOKEN="))
+		value = strings.Trim(value, `"'`)
+		if value != "" {
+			return value, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("读取 %s 失败: %w", envPath, err)
+	}
+	return "", fmt.Errorf("缺少 ADMIN_TOKEN，且 %s 未定义 ADMIN_TOKEN", envPath)
 }
 
 func (s Service) buildRemoteDiagnoseCommand(server Server) string {
