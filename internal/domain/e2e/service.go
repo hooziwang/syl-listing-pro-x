@@ -136,6 +136,9 @@ func (s Service) runReleaseGate(ctx context.Context, in RunInput) (RunResult, er
 	if len(files) < 4 {
 		return RunResult{}, fmt.Errorf("产物不足: %d < 4", len(files))
 	}
+	if err := validateReleaseGateOutputs(files); err != nil {
+		return RunResult{}, err
+	}
 	return RunResult{
 		ArtifactsDir: artifactDir,
 		OutputFiles:  files,
@@ -198,6 +201,46 @@ func collectOutputFiles(dir string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func validateReleaseGateOutputs(files []string) error {
+	enMarkdown := ""
+	for _, file := range files {
+		name := filepath.Base(file)
+		if strings.HasSuffix(name, "_en.md") {
+			enMarkdown = file
+			break
+		}
+	}
+	if enMarkdown == "" {
+		return fmt.Errorf("缺少英文 markdown 产物")
+	}
+	return validateEnglishSearchTermsLowercase(enMarkdown)
+}
+
+func validateEnglishSearchTermsLowercase(path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取英文 markdown 失败: %w", err)
+	}
+	text := string(raw)
+	marker := "## 搜索词\n"
+	index := strings.Index(text, marker)
+	if index < 0 {
+		return fmt.Errorf("英文 markdown 缺少 search_terms 段落: %s", path)
+	}
+	rest := strings.TrimSpace(text[index+len(marker):])
+	if rest == "" {
+		return fmt.Errorf("英文 markdown 的 search_terms 为空: %s", path)
+	}
+	line := strings.TrimSpace(strings.Split(rest, "\n")[0])
+	if line == "" {
+		return fmt.Errorf("英文 markdown 的 search_terms 为空: %s", path)
+	}
+	if line != strings.ToLower(line) {
+		return fmt.Errorf("英文 markdown 的 search_terms 不是全小写: %s", path)
+	}
+	return nil
 }
 
 type defaultRulesRunner struct {
