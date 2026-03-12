@@ -133,10 +133,10 @@ func DefaultServers() map[string]Server {
 	return map[string]Server{
 		"syl-server": {
 			Name: "syl-server",
-			Host: "43.135.112.167",
+			Host: "159.75.124.28",
 			User: "ubuntu",
 			Port: 22,
-			Dir:  "/opt/syl-listing-worker",
+			Dir:  "/home/ubuntu/syl-listing-worker",
 		},
 	}
 }

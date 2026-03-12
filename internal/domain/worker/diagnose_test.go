@@ -15,7 +15,7 @@ func TestDefaultServers(t *testing.T) {
 	if !ok {
 		t.Fatal("missing syl-server")
 	}
-	if srv.Host != "43.135.112.167" {
+	if srv.Host != "159.75.124.28" {
 		t.Fatalf("host=%q", srv.Host)
 	}
 	if srv.User != "ubuntu" {

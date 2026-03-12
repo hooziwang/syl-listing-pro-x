@@ -121,10 +121,10 @@ func TestDeploy(t *testing.T) {
 	if len(remote.runs) != 3 {
 		t.Fatalf("runs=%d", len(remote.runs))
 	}
-	if !strings.Contains(remote.runs[0].cmd, "find /opt/syl-listing-worker -mindepth 1 -maxdepth 1 ! -name data ! -name .env -exec rm -rf {} +") {
+	if !strings.Contains(remote.runs[0].cmd, "find /home/ubuntu/syl-listing-worker -mindepth 1 -maxdepth 1 ! -name data ! -name .env -exec rm -rf {} +") {
 		t.Fatalf("unexpected sync cleanup cmd: %s", remote.runs[0].cmd)
 	}
-	if !strings.Contains(remote.runs[1].cmd, "cp /tmp/syl-listing-worker.env.tmp /opt/syl-listing-worker/.env") {
+	if !strings.Contains(remote.runs[1].cmd, "cp /tmp/syl-listing-worker.env.tmp /home/ubuntu/syl-listing-worker/.env") {
 		t.Fatalf("unexpected env upload cmd: %s", remote.runs[1].cmd)
 	}
 	for _, want := range []string{
