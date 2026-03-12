@@ -80,7 +80,7 @@ func (s Service) buildRemoteDeployCommand(server Server, remoteTmp string, in De
 	if timeout <= 0 {
 		timeout = 240
 	}
-	interval := in.HTTPSInterval
+	interval := in.HTTPSCheckInterval
 	if interval <= 0 {
 		interval = 2
 	}

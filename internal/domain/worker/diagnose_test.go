@@ -53,9 +53,10 @@ func TestDiagnoseExternal(t *testing.T) {
 			gotGenerateAuth = r.Header.Get("Authorization")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"job_id":"job_1"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/jobs/job_1":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"ok":true,"status":"succeeded"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/jobs/job_1/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: status\n"))
+			_, _ = w.Write([]byte("data: {\"job_id\":\"job_1\",\"tenant_id\":\"syl\",\"status\":\"succeeded\",\"updated_at\":\"2026-03-12T00:00:01Z\"}\n\n"))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/jobs/job_1/result":
 			w.Header().Set("Content-Type", "application/json")
 			resp := map[string]any{
@@ -81,7 +82,6 @@ func TestDiagnoseExternal(t *testing.T) {
 		SYLKey:       "key-123",
 		WithGenerate: true,
 		Timeout:      2 * time.Second,
-		Interval:     10 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("DiagnoseExternal() error = %v", err)

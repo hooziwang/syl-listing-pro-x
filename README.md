@@ -293,7 +293,7 @@ syl-listing-pro-x worker deploy --server syl-server
 - `--install-docker`：远端缺 Docker 时自动安装
 - `--skip-wait-https`：不等 HTTPS 证书 ready
 - `--https-timeout`：等待超时秒数，默认 `240`
-- `--https-interval`：轮询间隔秒数，默认 `2`
+- `--https-interval`：HTTPS 就绪检查间隔秒数，默认 `2`
 - `--skip-diagnose`：部署后不跑内部诊断
 
 ### `worker push-env`
@@ -355,7 +355,7 @@ syl-listing-pro-x worker diagnose-external --base-url https://worker.aelus.tech 
 如果带上 `--with-generate`，还会额外：
 
 6. `POST /v1/generate`
-7. 轮询 `GET /v1/jobs/:jobId`
+7. 订阅 `GET /v1/jobs/:jobId/events`
 8. 读取 `GET /v1/jobs/:jobId/result`
 9. 确认 `en_markdown` 和 `cn_markdown` 都非空
 
@@ -364,8 +364,7 @@ syl-listing-pro-x worker diagnose-external --base-url https://worker.aelus.tech 
 - `--key`：必填
 - `--base-url`：默认取 `paths.WorkerURL`
 - `--with-generate`：额外验证真实生成链路
-- `--timeout`：生成轮询超时，默认 `5m`
-- `--interval`：轮询间隔，默认 `2s`
+- `--timeout`：生成事件流超时，默认 `5m`
 
 ### `worker check-remote-version`
 

@@ -1,8 +1,12 @@
 package worker
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -90,9 +94,6 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 	if in.Timeout <= 0 {
 		in.Timeout = 5 * time.Minute
 	}
-	if in.Interval <= 0 {
-		in.Interval = 2 * time.Second
-	}
 
 	var health healthResponse
 	if err := s.requestJSONWithStatus(ctx, http.MethodGet, baseURL+"/healthz", "", nil, &health, map[int]struct{}{
@@ -131,7 +132,7 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 	}
 
 	body := map[string]any{
-		"input_markdown": "===Listing Requirements===\n\n# 基础信息\n品牌名: E2EBrand\n\n# 关键词库\nkeyword one\nkeyword two\nkeyword three\nkeyword four\nkeyword five\nkeyword six\nkeyword seven\nkeyword eight\nkeyword nine\nkeyword ten\nkeyword eleven\nkeyword twelve\nkeyword thirteen\nkeyword fourteen\nkeyword fifteen\n\n# 分类\nHome & Kitchen > Decor\n",
+		"input_markdown": "===Listing Requirements===\n\n# 基础信息\n\n品牌名: E2EBrand\n数量/包装:12 pack\n核心材质:paper and metal frame\n颜色:Colorful plaid\n尺寸:10 x 10 in\n重量:330g\n\n# 功能卖点\n\n1. classroom hanging decoration\n2. diy friendly setup\n3. reusable foldable structure\n4. bright colorful plaid look\n5. wide party use\n\n# 产品细节信息\n\n包装内含:12 paper lanterns with metal frames\n适用场景:classroom ceiling hanging decoration for back to school displays\n设计特点:colorful plaid round lanterns with collapsible frame\n质量/安全认证:lightweight paper decor for indoor party display\n\n# 关键词库（按权重排序，共15-20个）\n\npaper lanterns\npaper lanterns decorative\ncolorful paper lanterns\nhanging paper lanterns\nhanging decor\npaper hanging decorations\nceiling hanging decor\nhanging ceiling decor\nclassroom decoration\nhanging classroom decoration\nceiling hanging classroom decor\nwedding decorations\nchinese lanterns\nball lanterns lamps\nsummer party decorations\nhanging decor from ceiling\nbaby shower decorations\npaper lamp\nwedding shower decorations\n\n# 分类\n\nTools & Home Improvement>Lighting & Ceiling Fans>Novelty Lighting>Paper Lanterns\n\n# 特殊关键要求\n\n适用场景最主要是教室悬挂装饰\n\n五点内容：\n\n套装包含（尺寸）\n材质（可重复使用）\n颜色\n组装（轻松安装）\n用途广泛\n",
 	}
 	var gen generateResponse
 	if err := s.requestJSON(ctx, http.MethodPost, baseURL+"/v1/generate", auth.AccessToken, body, &gen); err != nil {
@@ -141,37 +142,118 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 		return fmt.Errorf("generate 缺少 job_id")
 	}
 
-	deadline := time.Now().Add(in.Timeout)
-	for time.Now().Before(deadline) {
-		var st jobStatusResponse
-		if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/jobs/"+gen.JobID, auth.AccessToken, nil, &st); err != nil {
-			return fmt.Errorf("查询任务失败: %w", err)
+	streamCtx, cancel := context.WithTimeout(ctx, in.Timeout)
+	defer cancel()
+
+	status, err := s.waitForJobTerminalStatus(streamCtx, baseURL, auth.AccessToken, gen.JobID)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("生成流式等待超时")
 		}
-		switch strings.ToLower(strings.TrimSpace(st.Status)) {
-		case "queued", "running", "":
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(in.Interval):
-			}
-		case "succeeded":
-			var result jobResultResponse
-			if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/jobs/"+gen.JobID+"/result", auth.AccessToken, nil, &result); err != nil {
-				return fmt.Errorf("读取结果失败: %w", err)
-			}
-			if strings.TrimSpace(result.ENMarkdown) == "" || strings.TrimSpace(result.CNMarkdown) == "" {
-				return fmt.Errorf("结果为空")
-			}
-			return nil
-		case "failed":
-			return fmt.Errorf("生成失败: %s", st.Error)
-		case "cancelled":
-			return fmt.Errorf("生成被取消")
+		return fmt.Errorf("订阅任务事件失败: %w", err)
+	}
+	switch strings.ToLower(strings.TrimSpace(status.Status)) {
+	case "succeeded":
+		var result jobResultResponse
+		if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/jobs/"+gen.JobID+"/result", auth.AccessToken, nil, &result); err != nil {
+			return fmt.Errorf("读取结果失败: %w", err)
+		}
+		if strings.TrimSpace(result.ENMarkdown) == "" || strings.TrimSpace(result.CNMarkdown) == "" {
+			return fmt.Errorf("结果为空")
+		}
+		return nil
+	case "failed":
+		return fmt.Errorf("生成失败: %s", status.Error)
+	case "cancelled":
+		return fmt.Errorf("生成被取消")
+	default:
+		return fmt.Errorf("未知任务状态: %s", status.Status)
+	}
+}
+
+func (s Service) waitForJobTerminalStatus(
+	ctx context.Context,
+	baseURL, bearer, jobID string,
+) (jobEventStatusResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/jobs/"+jobID+"/events", nil)
+	if err != nil {
+		return jobEventStatusResponse{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	req.Header.Set("Accept", "text/event-stream")
+
+	baseClient := s.httpClient()
+	streamClient := *baseClient
+	streamClient.Timeout = 0
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return jobEventStatusResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return jobEventStatusResponse{}, fmt.Errorf("%s", strings.TrimSpace(string(data)))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	var eventName string
+	var dataLines []string
+	flush := func() (jobEventStatusResponse, bool, error) {
+		if len(dataLines) == 0 {
+			eventName = ""
+			return jobEventStatusResponse{}, false, nil
+		}
+		defer func() {
+			eventName = ""
+			dataLines = dataLines[:0]
+		}()
+		if eventName != "status" {
+			return jobEventStatusResponse{}, false, nil
+		}
+		var payload jobEventStatusResponse
+		if err := json.Unmarshal([]byte(strings.Join(dataLines, "\n")), &payload); err != nil {
+			return jobEventStatusResponse{}, false, err
+		}
+		switch strings.ToLower(strings.TrimSpace(payload.Status)) {
+		case "succeeded", "failed", "cancelled":
+			return payload, true, nil
 		default:
-			return fmt.Errorf("未知任务状态: %s", st.Status)
+			return jobEventStatusResponse{}, false, nil
 		}
 	}
-	return fmt.Errorf("生成轮询超时")
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if payload, ok, flushErr := flush(); flushErr != nil {
+					return jobEventStatusResponse{}, flushErr
+				} else if ok {
+					return payload, nil
+				}
+				return jobEventStatusResponse{}, fmt.Errorf("事件流在终态前结束")
+			}
+			return jobEventStatusResponse{}, err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			if payload, ok, flushErr := flush(); flushErr != nil {
+				return jobEventStatusResponse{}, flushErr
+			} else if ok {
+				return payload, nil
+			}
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "event:"):
+			eventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+		}
+	}
 }
 
 func providerHealthy(p providerHealth) bool {

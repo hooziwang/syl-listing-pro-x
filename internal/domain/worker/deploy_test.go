@@ -101,14 +101,14 @@ func TestDeploy(t *testing.T) {
 		Servers:    DefaultServers(),
 	}
 	if err := svc.Deploy(context.Background(), DeployInput{
-		Server:        "syl-server",
-		SkipBuild:     true,
-		StopLegacy:    true,
-		InstallDocker: true,
-		SkipWaitHTTPS: true,
-		HTTPSTimeout:  240,
-		HTTPSInterval: 2,
-		SkipDiagnose:  true,
+		Server:             "syl-server",
+		SkipBuild:          true,
+		StopLegacy:         true,
+		InstallDocker:      true,
+		SkipWaitHTTPS:      true,
+		HTTPSTimeout:       240,
+		HTTPSCheckInterval: 2,
+		SkipDiagnose:       true,
 	}); err != nil {
 		t.Fatalf("Deploy() error = %v", err)
 	}
@@ -151,11 +151,11 @@ func TestDeployWaitHTTPSUsesHostResolvedDomain(t *testing.T) {
 
 	svc := Service{WorkerRepo: workerRepo}
 	cmd := svc.buildRemoteDeployCommand(DefaultServers()["syl-server"], "/tmp/archive.tar.gz", DeployInput{
-		Server:        "syl-server",
-		SkipBuild:     true,
-		SkipWaitHTTPS: false,
-		HTTPSTimeout:  120,
-		HTTPSInterval: 3,
+		Server:             "syl-server",
+		SkipBuild:          true,
+		SkipWaitHTTPS:      false,
+		HTTPSTimeout:       120,
+		HTTPSCheckInterval: 3,
 	}, `{"service":"syl-listing-worker","git_commit":"abc1234","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z"}`)
 	if strings.Contains(cmd, "python3 -c") {
 		t.Fatalf("deploy cmd should not invoke python3 inside container: %s", cmd)

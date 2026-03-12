@@ -26,7 +26,6 @@ type DiagnoseExternalInput struct {
 	SYLKey       string
 	WithGenerate bool
 	Timeout      time.Duration
-	Interval     time.Duration
 }
 
 type PushEnvInput struct {
@@ -42,14 +41,14 @@ type LogsInput struct {
 }
 
 type DeployInput struct {
-	Server        string
-	SkipBuild     bool
-	StopLegacy    bool
-	InstallDocker bool
-	SkipWaitHTTPS bool
-	HTTPSTimeout  int
-	HTTPSInterval int
-	SkipDiagnose  bool
+	Server             string
+	SkipBuild          bool
+	StopLegacy         bool
+	InstallDocker      bool
+	SkipWaitHTTPS      bool
+	HTTPSTimeout       int
+	HTTPSCheckInterval int
+	SkipDiagnose       bool
 }
 
 type CheckRemoteVersionInput struct {
@@ -108,6 +107,14 @@ type generateResponse struct {
 type jobStatusResponse struct {
 	Status string `json:"status"`
 	Error  string `json:"error"`
+}
+
+type jobEventStatusResponse struct {
+	JobID     string `json:"job_id"`
+	TenantID  string `json:"tenant_id"`
+	Status    string `json:"status"`
+	UpdatedAt string `json:"updated_at"`
+	Error     string `json:"error"`
 }
 
 type jobResultResponse struct {

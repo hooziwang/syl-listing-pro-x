@@ -13,7 +13,7 @@ func newWorkerDeployCmd() *cobra.Command {
 	var installDocker bool
 	var skipWaitHTTPS bool
 	var httpsTimeout int
-	var httpsInterval int
+	var httpsCheckInterval int
 	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "远程部署 worker",
@@ -30,14 +30,14 @@ func newWorkerDeployCmd() *cobra.Command {
 				Servers:    worker.DefaultServers(),
 			}
 			return svc.Deploy(cmd.Context(), worker.DeployInput{
-				Server:        server,
-				SkipBuild:     skipBuild,
-				StopLegacy:    stopLegacy,
-				InstallDocker: installDocker,
-				SkipWaitHTTPS: skipWaitHTTPS,
-				HTTPSTimeout:  httpsTimeout,
-				HTTPSInterval: httpsInterval,
-				SkipDiagnose:  skipDiagnose,
+				Server:             server,
+				SkipBuild:          skipBuild,
+				StopLegacy:         stopLegacy,
+				InstallDocker:      installDocker,
+				SkipWaitHTTPS:      skipWaitHTTPS,
+				HTTPSTimeout:       httpsTimeout,
+				HTTPSCheckInterval: httpsCheckInterval,
+				SkipDiagnose:       skipDiagnose,
 			})
 		},
 	}
@@ -47,7 +47,7 @@ func newWorkerDeployCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&installDocker, "install-docker", false, "缺少 docker 时自动安装")
 	cmd.Flags().BoolVar(&skipWaitHTTPS, "skip-wait-https", false, "跳过 HTTPS 就绪等待")
 	cmd.Flags().IntVar(&httpsTimeout, "https-timeout", 240, "HTTPS 等待超时秒数")
-	cmd.Flags().IntVar(&httpsInterval, "https-interval", 2, "HTTPS 轮询间隔秒数")
+	cmd.Flags().IntVar(&httpsCheckInterval, "https-interval", 2, "HTTPS 就绪检查间隔秒数")
 	cmd.Flags().BoolVar(&skipDiagnose, "skip-diagnose", false, "部署后跳过诊断")
 	return cmd
 }
