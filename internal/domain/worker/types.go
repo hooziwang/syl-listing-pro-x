@@ -82,7 +82,6 @@ type RemoteExecutor interface {
 type healthResponse struct {
 	OK  bool `json:"ok"`
 	LLM struct {
-		Fluxcode providerHealth `json:"fluxcode"`
 		Deepseek providerHealth `json:"deepseek"`
 	} `json:"llm"`
 }

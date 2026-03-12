@@ -24,7 +24,7 @@ func (s Service) Validate(tenant string) error {
 	if err != nil {
 		return err
 	}
-	workflowDoc, err := readYAMLMap(filepath.Join(rulesDir, "workflow.yaml"))
+	workflowDoc, err := readYAMLMap(filepath.Join(rulesDir, "generation-config.yaml"))
 	if err != nil {
 		return err
 	}
@@ -41,28 +41,24 @@ func (s Service) Validate(tenant string) error {
 	if err := validateInputFields(inputDoc); err != nil {
 		return err
 	}
-	if err := requireMapKeys(workflowDoc, "workflow.yaml", "planning", "judge", "translation", "render", "display_labels", "nodes"); err != nil {
+	if err := requireMapKeys(workflowDoc, "generation-config.yaml", "planning", "judge", "translation", "render", "display_labels"); err != nil {
 		return err
 	}
-	if err := requireNestedKeys(workflowDoc, "workflow.yaml", "planning", "system_prompt", "user_prompt"); err != nil {
+	if err := requireNestedKeys(workflowDoc, "generation-config.yaml", "planning", "system_prompt", "user_prompt"); err != nil {
 		return err
 	}
-	if err := requireNestedKeys(workflowDoc, "workflow.yaml", "judge", "system_prompt", "user_prompt", "ignore_messages", "skip_sections"); err != nil {
+	if err := requireNestedKeys(workflowDoc, "generation-config.yaml", "judge", "system_prompt", "user_prompt", "ignore_messages", "skip_sections"); err != nil {
 		return err
 	}
-	if err := requireNestedKeys(workflowDoc, "workflow.yaml", "translation", "system_prompt"); err != nil {
+	if err := requireNestedKeys(workflowDoc, "generation-config.yaml", "translation", "system_prompt"); err != nil {
 		return err
 	}
-	if err := requireNestedKeys(workflowDoc, "workflow.yaml", "render", "keywords_item_template", "bullets_item_template", "bullets_separator"); err != nil {
+	if err := requireNestedKeys(workflowDoc, "generation-config.yaml", "render", "keywords_item_template", "bullets_item_template", "bullets_separator"); err != nil {
 		return err
 	}
-	if err := requireNestedKeys(workflowDoc, "workflow.yaml", "display_labels", "title", "bullets", "description", "search_terms", "category", "keywords"); err != nil {
+	if err := requireNestedKeys(workflowDoc, "generation-config.yaml", "display_labels", "title", "bullets", "description", "search_terms", "category", "keywords"); err != nil {
 		return err
 	}
-	if err := validateWorkflowNodes(workflowDoc); err != nil {
-		return err
-	}
-
 	requiredSections, err := stringListFromMap(packageDoc, "required_sections", "package.yaml")
 	if err != nil {
 		return err
@@ -189,86 +185,6 @@ func stringList(raw any) []string {
 	return out
 }
 
-func validateWorkflowNodes(workflowDoc map[string]any) error {
-	rawNodes, ok := workflowDoc["nodes"].([]any)
-	if !ok || len(rawNodes) == 0 {
-		return fmt.Errorf("workflow.yaml nodes 非法")
-	}
-
-	nodeIDs := make(map[string]struct{}, len(rawNodes))
-	outputSlots := make(map[string]string, len(rawNodes))
-	nodeDefs := make([]map[string]any, 0, len(rawNodes))
-
-	for idx, raw := range rawNodes {
-		node, ok := raw.(map[string]any)
-		if !ok {
-			return fmt.Errorf("workflow.nodes[%d] 结构非法", idx)
-		}
-		id := strings.TrimSpace(fmt.Sprint(node["id"]))
-		if id == "" {
-			return fmt.Errorf("workflow.nodes[%d].id 不能为空", idx)
-		}
-		if _, exists := nodeIDs[id]; exists {
-			return fmt.Errorf("workflow.nodes[%s] 重复定义", id)
-		}
-		nodeType := strings.TrimSpace(fmt.Sprint(node["type"]))
-		if nodeType == "" {
-			return fmt.Errorf("workflow.nodes[%s].type 不能为空", id)
-		}
-		switch nodeType {
-		case "generate":
-			section := strings.TrimSpace(fmt.Sprint(node["section"]))
-			if section == "" {
-				return fmt.Errorf("workflow.nodes[%s].section 不能为空", id)
-			}
-		case "translate":
-			inputFrom := strings.TrimSpace(fmt.Sprint(node["input_from"]))
-			if inputFrom == "" {
-				return fmt.Errorf("workflow.nodes[%s].input_from 不能为空", id)
-			}
-		case "derive":
-			section := strings.TrimSpace(fmt.Sprint(node["section"]))
-			if section == "" {
-				return fmt.Errorf("workflow.nodes[%s].section 不能为空", id)
-			}
-		case "judge":
-			if _, ok := node["inputs"].(map[string]any); !ok {
-				return fmt.Errorf("workflow.nodes[%s].inputs 非法", id)
-			}
-		case "render":
-			if _, ok := node["inputs"].(map[string]any); !ok {
-				return fmt.Errorf("workflow.nodes[%s].inputs 非法", id)
-			}
-			template := strings.TrimSpace(fmt.Sprint(node["template"]))
-			if template == "" {
-				return fmt.Errorf("workflow.nodes[%s].template 不能为空", id)
-			}
-		default:
-			return fmt.Errorf("workflow.nodes[%s].type 非法: %s", id, nodeType)
-		}
-		outputTo := strings.TrimSpace(fmt.Sprint(node["output_to"]))
-		if outputTo == "" {
-			return fmt.Errorf("workflow.nodes[%s].output_to 不能为空", id)
-		}
-		if previous, exists := outputSlots[outputTo]; exists {
-			return fmt.Errorf("workflow.nodes[%s].output_to 与 [%s] 冲突: %s", id, previous, outputTo)
-		}
-		outputSlots[outputTo] = id
-		nodeIDs[id] = struct{}{}
-		nodeDefs = append(nodeDefs, node)
-	}
-
-	for _, node := range nodeDefs {
-		id := strings.TrimSpace(fmt.Sprint(node["id"]))
-		for _, dep := range stringList(node["depends_on"]) {
-			if _, ok := nodeIDs[dep]; !ok {
-				return fmt.Errorf("workflow.nodes[%s].depends_on 引用了不存在的节点: %s", id, dep)
-			}
-		}
-	}
-
-	return nil
-}
 
 func validateInputFields(inputDoc map[string]any) error {
 	rawFields, ok := inputDoc["fields"].([]any)

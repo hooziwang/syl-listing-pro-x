@@ -35,6 +35,16 @@ func (s Service) requestDownload(ctx context.Context, url, bearer string) error 
 }
 
 func (s Service) requestJSON(ctx context.Context, method, url, bearer string, body any, out any) error {
+	return s.requestJSONWithStatus(ctx, method, url, bearer, body, out, nil)
+}
+
+func (s Service) requestJSONWithStatus(
+	ctx context.Context,
+	method, url, bearer string,
+	body any,
+	out any,
+	allowedStatuses map[int]struct{},
+) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -62,7 +72,8 @@ func (s Service) requestJSON(ctx context.Context, method, url, bearer string, bo
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	_, statusAllowed := allowedStatuses[resp.StatusCode]
+	if (resp.StatusCode < 200 || resp.StatusCode >= 300) && !statusAllowed {
 		return fmt.Errorf("%s", strings.TrimSpace(string(data)))
 	}
 	if out == nil || len(data) == 0 {

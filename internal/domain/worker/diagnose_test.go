@@ -31,7 +31,7 @@ func TestDiagnoseExternal(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/healthz":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"tenant_id":"system","ok":true,"llm":{"fluxcode":{"ok":true},"deepseek":{"ok":true}}}`))
+			_, _ = w.Write([]byte(`{"tenant_id":"system","ok":true,"llm":{"deepseek":{"ok":true}}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/exchange":
 			gotAuth = r.Header.Get("Authorization")
 			w.Header().Set("Content-Type", "application/json")
@@ -100,7 +100,8 @@ func TestDiagnoseExternal_IgnoresOptionalProviderFailure(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/healthz":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"tenant_id":"system","ok":false,"llm":{"fluxcode":{"ok":false,"required":false},"deepseek":{"ok":true,"required":true}}}`))
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"tenant_id":"system","ok":false,"llm":{"deepseek":{"ok":true,"required":true}}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/exchange":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"tenant_id":"syl","access_token":"token-1"}`))

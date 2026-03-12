@@ -66,6 +66,9 @@ func TestE2EHelpIncludesExecutionContext(t *testing.T) {
 		"依赖 PATH 中可执行的 syl-listing-pro",
 		"release-gate",
 		"architecture-gate",
+		"listing-compliance-gate",
+		"single-listing-compliance-gate",
+		"single",
 	)
 }
 
@@ -117,7 +120,16 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			parts: []string{
 				"会先发布规则，再诊断 worker，最后调用 syl-listing-pro",
 				"stdout 只打印 artifacts 目录路径",
-				"可用用例：release-gate, architecture-gate",
+				"可用用例：release-gate, architecture-gate, listing-compliance-gate, single-listing-compliance-gate",
+			},
+		},
+		{
+			name:  "e2e-single",
+			build: newE2ESingleCmd,
+			parts: []string{
+				"单文件真实回归验收入口",
+				"固定执行 single-listing-compliance-gate",
+				"如果不传 --out，会默认落到 syl-listing-pro-x/out/<artifacts-id>",
 			},
 		},
 	}

@@ -31,7 +31,7 @@ func (s Service) buildRemoteDiagnoseCommand(server Server) string {
 	if err != nil {
 		return fmt.Sprintf("echo %q >&2; exit 1", err.Error())
 	}
-	healthCheckJS := `const ok=(p)=>p?.required===false||p?.ok===true;const run=async()=>{const res=await fetch("http://127.0.0.1:8080/healthz");const raw=await res.text();const data=JSON.parse(raw);if(!res.ok||!ok(data.llm?.fluxcode)||!ok(data.llm?.deepseek)){throw new Error(raw)}};run().catch(e=>{console.error(e.message);process.exit(1);});`
+	healthCheckJS := `const run=async()=>{const res=await fetch("http://127.0.0.1:8080/healthz");const raw=await res.text();const data=JSON.parse(raw);if(![200,503].includes(res.status)||data.llm?.deepseek?.ok!==true){throw new Error(raw)}};run().catch(e=>{console.error(e.message);process.exit(1);});`
 	return strings.Join([]string{
 		"set -euo pipefail",
 		fmt.Sprintf("cd %s", server.Dir),
@@ -95,7 +95,9 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 	}
 
 	var health healthResponse
-	if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/healthz", "", nil, &health); err != nil {
+	if err := s.requestJSONWithStatus(ctx, http.MethodGet, baseURL+"/healthz", "", nil, &health, map[int]struct{}{
+		http.StatusServiceUnavailable: {},
+	}); err != nil {
 		return fmt.Errorf("healthz 检查失败: %w", err)
 	}
 	if !healthAcceptable(health) {
@@ -180,5 +182,5 @@ func providerHealthy(p providerHealth) bool {
 }
 
 func healthAcceptable(h healthResponse) bool {
-	return providerHealthy(h.LLM.Fluxcode) && providerHealthy(h.LLM.Deepseek)
+	return providerHealthy(h.LLM.Deepseek)
 }

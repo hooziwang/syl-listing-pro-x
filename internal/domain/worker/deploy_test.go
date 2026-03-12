@@ -210,7 +210,7 @@ func TestDiagnoseRunsFullChecklist(t *testing.T) {
 	}
 }
 
-func TestDiagnoseCommandUsesRequiredAwareHealthCheck(t *testing.T) {
+func TestDiagnoseCommandRequiresDeepseekHealthCheck(t *testing.T) {
 	root := t.TempDir()
 	workerRepo := filepath.Join(root, "worker")
 	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
@@ -222,11 +222,11 @@ func TestDiagnoseCommandUsesRequiredAwareHealthCheck(t *testing.T) {
 
 	svc := Service{WorkerRepo: workerRepo}
 	cmd := svc.buildRemoteDiagnoseCommand(DefaultServers()["syl-server"])
-	if strings.Contains(cmd, "data.llm?.fluxcode?.ok!==true||data.llm?.deepseek?.ok!==true") {
-		t.Fatalf("diagnose cmd should not hardcode provider ok checks: %s", cmd)
+	if strings.Contains(cmd, "flux"+"code") {
+		t.Fatalf("diagnose cmd should not reference removed provider checks: %s", cmd)
 	}
-	if !strings.Contains(cmd, "required===false") {
-		t.Fatalf("diagnose cmd should consider optional providers: %s", cmd)
+	if !strings.Contains(cmd, "data.llm?.deepseek?.ok!==true") {
+		t.Fatalf("diagnose cmd should require deepseek health only: %s", cmd)
 	}
 }
 

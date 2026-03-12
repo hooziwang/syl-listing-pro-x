@@ -121,8 +121,10 @@ syl-listing-pro-x worker logs --server syl-server --service worker-api --tail 50
 
 ```bash
 syl-listing-pro-x e2e list
+syl-listing-pro-x e2e single --tenant syl --input /abs/demo.md
 syl-listing-pro-x e2e run --case release-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --input /abs/demo.md --out /abs/out
 syl-listing-pro-x e2e run --case architecture-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --private-key /abs/rules.pem --input /abs/demo.md --out /abs/out
+syl-listing-pro-x e2e run --case listing-compliance-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --out /abs/out
 ```
 
 ## rules：规则工具链
@@ -140,7 +142,7 @@ syl-listing-pro-x rules validate --tenant syl
 - `tenants/<tenant>/rules` 目录存在
 - `package.yaml` 具备 `required_sections`、`templates`
 - `input.yaml` 具备 `file_discovery.marker`、`fields`
-- `workflow.yaml` 具备 `planning`、`judge`、`translation`、`render`、`display_labels`、`nodes`
+- `generation-config.yaml` 具备 `planning`、`judge`、`translation`、`render`、`display_labels`
 - `sections/*.yaml` 覆盖 `required_sections` 中声明的 section
 - 模板文件存在
 
@@ -150,14 +152,9 @@ syl-listing-pro-x rules validate --tenant syl
 - 必须至少定义 `brand`、`keywords`、`category`
 - `field.type` 只能是 `scalar` 或 `list`
 - `field.capture` 只能是 `inline_label` 或 `heading_section`
-- `workflow.nodes` 必须非空
-- `node.id` 不可重复
-- `node.type` 只能是 `generate | translate | derive | judge | render`
-- `depends_on` 只能引用已声明节点
-- `output_to` 全局唯一
-- `judge.inputs`、`render.inputs` 必须是 map
+- `workflow` 不再承载 DAG/节点编排；section 并发与 handoff 由 worker 的 runtime policy 决定
 
-也就是说，这个校验不是“YAML 能读出来”就算过，而是在工程侧强制规则包满足 worker 的执行约束。
+也就是说，这个校验不是“YAML 能读出来”就算过，而是在工程侧强制规则包满足当前 runtime-native worker 的规则契约。
 
 ### `rules package`
 
@@ -423,6 +420,8 @@ syl-listing-pro-x worker logs --server syl-server --no-follow
 
 - `release-gate`
 - `architecture-gate`
+- `listing-compliance-gate`
+- `single-listing-compliance-gate`
 
 ### `e2e list`
 
@@ -450,13 +449,43 @@ syl-listing-pro-x e2e run \
 2. 调用 `rules publish`
 3. 调用 `worker diagnose-external`
 4. 查找系统中的 `syl-listing-pro`
-5. 执行真实 CLI：
+5. 执行真实 CLI（始终带 `--verbose`）：
    `syl-listing-pro <input> -o <out> --verbose --log-file <artifact>/cli.verbose.ndjson`
 6. 收集输出目录里的 `.md` 和 `.docx`
 7. 校验产物数量至少为 4
 8. 额外校验英文 markdown 的 `## 搜索词` 第一行必须全小写
 
 命令成功时，标准输出只打印 artifact 目录路径。
+
+### `e2e single`
+
+```bash
+syl-listing-pro-x e2e single \
+  --tenant syl \
+  --input /abs/demo.md
+```
+
+这是单文件真实回归的正式入口，内部固定执行 `single-listing-compliance-gate`。
+如果没有显式传 `--private-key`，并且当前机器也没有配置签名私钥环境变量，它会自动回退到仓库内开发私钥，同时临时开启本地开发模式。
+
+固定流程：
+
+1. 创建 artifact 目录
+2. 如果未传 `--out`，自动推导到 `syl-listing-pro-x/out/<artifacts-id>`
+3. 调用 `rules publish`
+4. 调用 `worker diagnose-external`
+5. 查找系统中的 `syl-listing-pro`
+6. 执行真实 CLI（始终带 `--verbose`）
+7. 检查前台 verbose 日志是否出现非预期错误信号
+8. 对单个输入产物执行定向 listing 合规校验
+
+当前这个定向校验重点覆盖：
+
+- 中英文 markdown 和 docx 产物齐全
+- 模板要求的中英文 section 都存在
+- 英文五点描述每条字符数满足当前硬规则
+- 英文五点描述小标题词数满足当前硬规则
+- 英文五点描述里的加粗关键词保持小写
 
 ### `release-gate`
 
@@ -495,6 +524,41 @@ architecture-summary.json
 - `worker_url`
 - `private_key_path`
 - `output_files`
+
+### `listing-compliance-gate`
+
+它把 e2e 的重点从“链路能不能跑通”前移到“真实生成结果是否满足规则约束”。
+
+固定输入来源：
+
+- `syl-listing-pro-x/testdata/e2e/*.md`
+
+它会对每个样例依次执行：
+
+1. 发布当前租户规则
+2. 运行 `worker diagnose-external`
+3. 真实执行 `syl-listing-pro --verbose`
+4. 检查 `cli.stderr.log` 是否为空
+5. 逐行解析 `cli.verbose.ndjson`
+6. 只要发现预期之外错误信号就失败，例如：
+   - `level=error`
+   - `event` 包含 `failed` / `error`
+   - `status=failed`
+7. 对英文和中文 markdown 执行规则约束校验
+
+当前首批合规断言包括：
+
+- 中英文 markdown 和 docx 产物齐全
+- 模板要求的 section 都存在
+- 标题、五点、描述、搜索词满足当前 `rules/tenants/<tenant>/rules/sections/*.yaml` 中的长度/结构约束
+- 英文搜索词满足全小写约束
+
+每个输入样例都会在 artifact 目录下生成：
+
+- `cli.verbose.ndjson`
+- `cli.stdout.log`
+- `cli.stderr.log`
+- `compliance-summary.json`
 
 如果不传 `--artifacts-id`，artifact 目录名默认使用 UTC 时间戳：
 
@@ -539,6 +603,10 @@ bin/syl-listing-pro-x worker check-remote-version
 cd /Users/wxy/syl-listing-pro/syl-listing-pro-x
 make
 
+bin/syl-listing-pro-x e2e single \
+  --tenant syl \
+  --input /Users/wxy/Downloads/test/12个装10寸开学季灯笼.md
+
 bin/syl-listing-pro-x e2e run \
   --case release-gate \
   --tenant syl \
@@ -555,6 +623,13 @@ bin/syl-listing-pro-x e2e run \
   --private-key /abs/rules.pem \
   --input /abs/demo.md \
   --out /abs/out
+
+bin/syl-listing-pro-x e2e run \
+  --case listing-compliance-gate \
+  --tenant syl \
+  --key <SYL_LISTING_KEY> \
+  --admin-token <ADMIN_TOKEN> \
+  --out /abs/out
 ```
 
 ## 常见注意点
@@ -564,8 +639,10 @@ bin/syl-listing-pro-x e2e run \
 - `worker deploy` / `push-env` / `diagnose` / `logs` 都依赖本机有 `ssh`、`scp`。
 - `worker deploy` 会保留远端 `data/` 和 `.env`，其余目录会被清空后再同步。
 - `worker check-remote-version` 会把本地 `worker` 仓 HEAD 与远端 `/v1/admin/version` 对比，不是比较 `syl-listing-pro-x` 自己的 commit。
-- `e2e run` 依赖系统 PATH 中存在可执行的 `syl-listing-pro`，否则会在 `exec.LookPath("syl-listing-pro")` 时报错。
-- `e2e run` 只会收集输出目录根层级的 `.md` / `.docx` 文件，不会递归子目录。
+- `e2e run` / `e2e single` 都依赖系统 PATH 中存在可执行的 `syl-listing-pro`，否则会在 `exec.LookPath("syl-listing-pro")` 时报错。
+- `release-gate` / `architecture-gate` 只会收集输出目录根层级的 `.md` / `.docx` 文件，不会递归子目录。
+- `listing-compliance-gate` 会为 `testdata/e2e` 下的每个输入样例创建独立输出子目录。
+- `e2e single` 如果不传 `--out`，会自动落到 `syl-listing-pro-x/out/<artifacts-id>`。
 - `diagnose-external` 对 provider 健康度采用 required-aware 策略：`required=false` 的 provider 即使 `ok=false` 也不会直接判死。
 
 ## 源码入口

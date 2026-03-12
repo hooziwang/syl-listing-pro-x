@@ -40,6 +40,8 @@ type WorkerRunner interface {
 type Service struct {
 	CLIPath       string
 	ArtifactsRoot string
+	TestdataRoot  string
+	RulesRoot     string
 	RulesRunner   RulesRunner
 	WorkerRunner  WorkerRunner
 }
@@ -69,9 +71,19 @@ type architectureSummary struct {
 	OutputFiles    []string `json:"output_files"`
 }
 
+type listingComplianceRunSummary struct {
+	Sample      string                       `json:"sample"`
+	Passed      bool                         `json:"passed"`
+	OutputFiles []string                     `json:"output_files,omitempty"`
+	Violations  []listingComplianceViolation `json:"violations,omitempty"`
+	Error       string                       `json:"error,omitempty"`
+}
+
 func NewDefaultService(paths config.Paths) Service {
 	return Service{
 		ArtifactsRoot: filepath.Join(paths.WorkspaceRoot, "syl-listing-pro-x", "artifacts"),
+		TestdataRoot:  filepath.Join(paths.WorkspaceRoot, "syl-listing-pro-x", "testdata", "e2e"),
+		RulesRoot:     paths.RulesRepo,
 		RulesRunner: defaultRulesRunner{
 			root: paths.RulesRepo,
 		},
@@ -80,7 +92,7 @@ func NewDefaultService(paths config.Paths) Service {
 }
 
 func (s Service) ListCases() []string {
-	return []string{"release-gate", "architecture-gate"}
+	return []string{"release-gate", "architecture-gate", "listing-compliance-gate", "single-listing-compliance-gate"}
 }
 
 func (s Service) Run(ctx context.Context, in RunInput) (RunResult, error) {
@@ -89,8 +101,12 @@ func (s Service) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		return s.runReleaseGate(ctx, in)
 	case "architecture-gate":
 		return s.runArchitectureGate(ctx, in)
+	case "listing-compliance-gate":
+		return s.runListingComplianceGate(ctx, in)
+	case "single-listing-compliance-gate":
+		return s.runSingleListingComplianceGate(ctx, in)
 	default:
-		return RunResult{}, fmt.Errorf("未知 e2e 用例: %s；可用值只有 release-gate 或 architecture-gate", in.CaseName)
+		return RunResult{}, fmt.Errorf("未知 e2e 用例: %s；可用值只有 release-gate、architecture-gate、listing-compliance-gate 或 single-listing-compliance-gate", in.CaseName)
 	}
 }
 
@@ -100,6 +116,231 @@ func (s Service) runReleaseGate(ctx context.Context, in RunInput) (RunResult, er
 
 func (s Service) runArchitectureGate(ctx context.Context, in RunInput) (RunResult, error) {
 	return s.runGate(ctx, in, true)
+}
+
+func (s Service) runListingComplianceGate(ctx context.Context, in RunInput) (RunResult, error) {
+	artifactDir, err := s.ensureArtifactsDir(in.ArtifactsID)
+	if err != nil {
+		return RunResult{}, err
+	}
+	if err := s.rulesRunner().Publish(ctx, PublishRulesInput{
+		Tenant:         in.Tenant,
+		WorkerURL:      in.WorkerURL,
+		AdminToken:     in.AdminToken,
+		PrivateKeyPath: in.PrivateKeyPath,
+	}); err != nil {
+		return RunResult{}, err
+	}
+	if err := s.workerRunner().DiagnoseExternal(ctx, DiagnoseWorkerInput{
+		BaseURL: in.WorkerURL,
+		SYLKey:  in.SYLKey,
+	}); err != nil {
+		return RunResult{}, err
+	}
+
+	cliPath, err := s.cliPath()
+	if err != nil {
+		return RunResult{}, err
+	}
+	if err := os.MkdirAll(in.OutputDir, 0o755); err != nil {
+		return RunResult{}, err
+	}
+
+	inputs, err := collectMarkdownInputs(s.testdataRoot())
+	if err != nil {
+		return RunResult{}, err
+	}
+	if len(inputs) == 0 {
+		return RunResult{}, fmt.Errorf("未找到 listing-compliance-gate 输入样例: %s", s.testdataRoot())
+	}
+
+	allFiles := make([]string, 0)
+	for _, inputPath := range inputs {
+		sample := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
+		sampleArtifactDir := filepath.Join(artifactDir, sample)
+		if err := os.MkdirAll(sampleArtifactDir, 0o755); err != nil {
+			return RunResult{}, err
+		}
+		sampleOutputDir := filepath.Join(in.OutputDir, sample)
+		if err := os.MkdirAll(sampleOutputDir, 0o755); err != nil {
+			return RunResult{}, err
+		}
+
+		stdout, stderr, logPath, runErr := executeCLI(ctx, cliPath, inputPath, sampleOutputDir, sampleArtifactDir)
+		if err := os.WriteFile(filepath.Join(sampleArtifactDir, "cli.stdout.log"), stdout, 0o644); err != nil {
+			return RunResult{}, err
+		}
+		if err := os.WriteFile(filepath.Join(sampleArtifactDir, "cli.stderr.log"), stderr, 0o644); err != nil {
+			return RunResult{}, err
+		}
+		if runErr != nil {
+			summary := listingComplianceRunSummary{
+				Sample: sample,
+				Passed: false,
+				Error:  fmt.Sprintf("CLI 执行失败: %v", runErr),
+			}
+			if err := writeListingComplianceSummary(filepath.Join(sampleArtifactDir, "compliance-summary.json"), summary); err != nil {
+				return RunResult{}, err
+			}
+			return RunResult{}, fmt.Errorf("%s: %s", sample, summary.Error)
+		}
+		if err := validateVerboseExecution(stderr, logPath); err != nil {
+			summary := listingComplianceRunSummary{
+				Sample: sample,
+				Passed: false,
+				Error:  fmt.Sprintf("CLI verbose 检查失败: %v", err),
+			}
+			if err := writeListingComplianceSummary(filepath.Join(sampleArtifactDir, "compliance-summary.json"), summary); err != nil {
+				return RunResult{}, err
+			}
+			return RunResult{}, fmt.Errorf("%s: %s", sample, summary.Error)
+		}
+
+		files, err := collectOutputFiles(sampleOutputDir)
+		if err != nil {
+			return RunResult{}, err
+		}
+		if err := validateListingOutputFiles(files); err != nil {
+			summary := listingComplianceRunSummary{
+				Sample:      sample,
+				Passed:      false,
+				OutputFiles: files,
+				Error:       err.Error(),
+			}
+			if err := writeListingComplianceSummary(filepath.Join(sampleArtifactDir, "compliance-summary.json"), summary); err != nil {
+				return RunResult{}, err
+			}
+			return RunResult{}, fmt.Errorf("%s: %s", sample, err)
+		}
+
+		enPath, cnPath, err := findMarkdownPair(files)
+		if err != nil {
+			return RunResult{}, err
+		}
+		report, err := validateListingCompliance(s.rulesRoot(), in.Tenant, enPath, cnPath)
+		if err != nil {
+			return RunResult{}, err
+		}
+
+		summary := listingComplianceRunSummary{
+			Sample:      sample,
+			Passed:      report.Passed,
+			OutputFiles: files,
+			Violations:  report.Violations,
+		}
+		if !report.Passed {
+			summary.Error = "listing 合规校验失败"
+		}
+		if err := writeListingComplianceSummary(filepath.Join(sampleArtifactDir, "compliance-summary.json"), summary); err != nil {
+			return RunResult{}, err
+		}
+		if !report.Passed {
+			return RunResult{}, fmt.Errorf("%s: listing 合规校验失败: %+v", sample, report.Violations)
+		}
+		allFiles = append(allFiles, files...)
+	}
+
+	sort.Strings(allFiles)
+	return RunResult{
+		ArtifactsDir: artifactDir,
+		OutputFiles:  allFiles,
+	}, nil
+}
+
+func (s Service) runSingleListingComplianceGate(ctx context.Context, in RunInput) (RunResult, error) {
+	artifactDir, err := s.ensureArtifactsDir(in.ArtifactsID)
+	if err != nil {
+		return RunResult{}, err
+	}
+	if err := s.rulesRunner().Publish(ctx, PublishRulesInput{
+		Tenant:         in.Tenant,
+		WorkerURL:      in.WorkerURL,
+		AdminToken:     in.AdminToken,
+		PrivateKeyPath: in.PrivateKeyPath,
+	}); err != nil {
+		return RunResult{}, err
+	}
+	if err := s.workerRunner().DiagnoseExternal(ctx, DiagnoseWorkerInput{
+		BaseURL: in.WorkerURL,
+		SYLKey:  in.SYLKey,
+	}); err != nil {
+		return RunResult{}, err
+	}
+
+	cliPath, err := s.cliPath()
+	if err != nil {
+		return RunResult{}, err
+	}
+	if err := os.MkdirAll(in.OutputDir, 0o755); err != nil {
+		return RunResult{}, err
+	}
+
+	stdout, stderr, logPath, runErr := executeCLI(ctx, cliPath, in.InputPath, in.OutputDir, artifactDir)
+	if err := os.WriteFile(filepath.Join(artifactDir, "cli.stdout.log"), stdout, 0o644); err != nil {
+		return RunResult{}, err
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "cli.stderr.log"), stderr, 0o644); err != nil {
+		return RunResult{}, err
+	}
+
+	summary := listingComplianceRunSummary{
+		Sample: strings.TrimSuffix(filepath.Base(in.InputPath), filepath.Ext(in.InputPath)),
+	}
+	if runErr != nil {
+		summary.Passed = false
+		summary.Error = fmt.Sprintf("CLI 执行失败: %v", runErr)
+		if err := writeListingComplianceSummary(filepath.Join(artifactDir, "compliance-summary.json"), summary); err != nil {
+			return RunResult{}, err
+		}
+		return RunResult{}, fmt.Errorf("%s: %s", summary.Sample, summary.Error)
+	}
+	if err := validateVerboseExecution(stderr, logPath); err != nil {
+		summary.Passed = false
+		summary.Error = fmt.Sprintf("CLI verbose 检查失败: %v", err)
+		if err := writeListingComplianceSummary(filepath.Join(artifactDir, "compliance-summary.json"), summary); err != nil {
+			return RunResult{}, err
+		}
+		return RunResult{}, fmt.Errorf("%s: %s", summary.Sample, summary.Error)
+	}
+
+	files, err := collectOutputFiles(in.OutputDir)
+	if err != nil {
+		return RunResult{}, err
+	}
+	summary.OutputFiles = files
+	if err := validateListingOutputFiles(files); err != nil {
+		summary.Passed = false
+		summary.Error = err.Error()
+		if err := writeListingComplianceSummary(filepath.Join(artifactDir, "compliance-summary.json"), summary); err != nil {
+			return RunResult{}, err
+		}
+		return RunResult{}, fmt.Errorf("%s: %s", summary.Sample, summary.Error)
+	}
+
+	enPath, cnPath, err := findMarkdownPair(files)
+	if err != nil {
+		return RunResult{}, err
+	}
+	report, err := validateSingleListingRegression(s.rulesRoot(), in.Tenant, enPath, cnPath)
+	if err != nil {
+		return RunResult{}, err
+	}
+	summary.Passed = report.Passed
+	summary.Violations = report.Violations
+	if !report.Passed {
+		summary.Error = "listing 合规校验失败"
+	}
+	if err := writeListingComplianceSummary(filepath.Join(artifactDir, "compliance-summary.json"), summary); err != nil {
+		return RunResult{}, err
+	}
+	if !report.Passed {
+		return RunResult{}, fmt.Errorf("%s: listing 合规校验失败: %+v", summary.Sample, report.Violations)
+	}
+
+	return RunResult{
+		ArtifactsDir: artifactDir,
+		OutputFiles:  files,
+	}, nil
 }
 
 func (s Service) runGate(ctx context.Context, in RunInput, withArchitectureSummary bool) (RunResult, error) {
@@ -216,6 +457,20 @@ func (s Service) cliPath() (string, error) {
 	return path, nil
 }
 
+func (s Service) testdataRoot() string {
+	if strings.TrimSpace(s.TestdataRoot) != "" {
+		return s.TestdataRoot
+	}
+	return filepath.Join("testdata", "e2e")
+}
+
+func (s Service) rulesRoot() string {
+	if strings.TrimSpace(s.RulesRoot) != "" {
+		return s.RulesRoot
+	}
+	return filepath.Join("..", "rules")
+}
+
 func (s Service) rulesRunner() RulesRunner {
 	if s.RulesRunner != nil {
 		return s.RulesRunner
@@ -247,6 +502,88 @@ func collectOutputFiles(dir string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func collectMarkdownInputs(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".md") {
+			out = append(out, filepath.Join(dir, name))
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func executeCLI(ctx context.Context, cliPath string, inputPath string, outputDir string, artifactDir string) ([]byte, []byte, string, error) {
+	logPath := filepath.Join(artifactDir, "cli.verbose.ndjson")
+	args := []string{
+		inputPath,
+		"-o", outputDir,
+		"--verbose",
+		"--log-file", logPath,
+	}
+	cmd := exec.CommandContext(ctx, cliPath, args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), logPath, err
+}
+
+func validateListingOutputFiles(files []string) error {
+	required := []string{"_en.md", "_cn.md", "_en.docx", "_cn.docx"}
+	for _, suffix := range required {
+		found := false
+		for _, file := range files {
+			if strings.HasSuffix(filepath.Base(file), suffix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("缺少产物: %s", suffix)
+		}
+	}
+	return nil
+}
+
+func findMarkdownPair(files []string) (string, string, error) {
+	enPath := ""
+	cnPath := ""
+	for _, file := range files {
+		base := filepath.Base(file)
+		switch {
+		case strings.HasSuffix(base, "_en.md"):
+			enPath = file
+		case strings.HasSuffix(base, "_cn.md"):
+			cnPath = file
+		}
+	}
+	if enPath == "" {
+		return "", "", fmt.Errorf("缺少英文 markdown 产物")
+	}
+	if cnPath == "" {
+		return "", "", fmt.Errorf("缺少中文 markdown 产物")
+	}
+	return enPath, cnPath, nil
+}
+
+func writeListingComplianceSummary(path string, summary listingComplianceRunSummary) error {
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 func validateReleaseGateOutputs(files []string) error {
