@@ -31,7 +31,7 @@ func TestCheckRemoteVersion(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"admin","service":"syl-listing-worker","git_commit":"` + localCommit + `","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z","rules_versions":{"demo":"rules-demo-1","syl":"rules-syl-1"}}`))
+		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"admin","service":"syl-listing-worker","worker_version":"v0.1.2","git_commit":"` + localCommit + `","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z","rules_versions":{"demo":"rules-demo-1","syl":"rules-syl-1"}}`))
 	}))
 	defer ts.Close()
 
@@ -59,6 +59,9 @@ func TestCheckRemoteVersion(t *testing.T) {
 	if result.Remote.GitCommit != localCommit {
 		t.Fatalf("Remote.GitCommit=%q want %q", result.Remote.GitCommit, localCommit)
 	}
+	if result.Remote.WorkerVersion != "v0.1.2" {
+		t.Fatalf("Remote.WorkerVersion=%q", result.Remote.WorkerVersion)
+	}
 	if result.Remote.RulesVersions["syl"] != "rules-syl-1" {
 		t.Fatalf("RulesVersions[syl]=%q", result.Remote.RulesVersions["syl"])
 	}
@@ -81,7 +84,7 @@ func TestCheckRemoteVersion_Mismatch(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"admin","service":"syl-listing-worker","git_commit":"deadbee","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z","rules_versions":{"demo":"rules-demo-1","syl":"rules-syl-1"}}`))
+		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"admin","service":"syl-listing-worker","worker_version":"v0.1.2","git_commit":"deadbee","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z","rules_versions":{"demo":"rules-demo-1","syl":"rules-syl-1"}}`))
 	}))
 	defer ts.Close()
 
@@ -142,7 +145,7 @@ func TestCheckRemoteVersion_LoadsAdminTokenFromHomeEnv(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"admin","service":"syl-listing-worker","git_commit":"` + localCommit + `","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z","rules_versions":{"syl":"rules-syl-1"}}`))
+		_, _ = w.Write([]byte(`{"ok":true,"tenant_id":"admin","service":"syl-listing-worker","worker_version":"v0.1.2","git_commit":"` + localCommit + `","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z","rules_versions":{"syl":"rules-syl-1"}}`))
 	}))
 	defer ts.Close()
 

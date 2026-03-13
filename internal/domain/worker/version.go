@@ -97,17 +97,35 @@ func (s Service) localGitCommitShort() (string, error) {
 	return commit, nil
 }
 
+func (s Service) localWorkerVersionTag() (string, error) {
+	cmd := exec.Command("git", "-C", s.workerRepo(), "describe", "--tags", "--exact-match", "HEAD")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("读取本地 worker git tag 失败: 当前提交未打 tag；请先为 worker 当前提交创建版本 tag。输出: %s", strings.TrimSpace(string(out)))
+	}
+	tag := strings.TrimSpace(string(out))
+	if tag == "" {
+		return "", fmt.Errorf("读取本地 worker git tag 失败: tag 为空")
+	}
+	return tag, nil
+}
+
 func (s Service) buildRuntimeVersionMetadata() (string, error) {
+	workerVersion, err := s.localWorkerVersionTag()
+	if err != nil {
+		return "", err
+	}
 	commit, err := s.localGitCommitShort()
 	if err != nil {
 		return "", err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	payload := map[string]string{
-		"service":     "syl-listing-worker",
-		"git_commit":  commit,
-		"build_time":  now,
-		"deployed_at": now,
+		"service":        "syl-listing-worker",
+		"worker_version": workerVersion,
+		"git_commit":     commit,
+		"build_time":     now,
+		"deployed_at":    now,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

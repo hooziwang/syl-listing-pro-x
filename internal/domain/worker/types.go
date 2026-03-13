@@ -60,6 +60,7 @@ type RemoteVersionInfo struct {
 	OK            bool              `json:"ok"`
 	TenantID      string            `json:"tenant_id"`
 	Service       string            `json:"service"`
+	WorkerVersion string            `json:"worker_version"`
 	GitCommit     string            `json:"git_commit"`
 	BuildTime     string            `json:"build_time"`
 	DeployedAt    string            `json:"deployed_at"`

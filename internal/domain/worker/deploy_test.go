@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,6 +95,7 @@ func TestDeploy(t *testing.T) {
 	}
 	runGit(t, workerRepo, "add", "worker.config.json", ".env")
 	runGit(t, workerRepo, "commit", "-m", "init")
+	runGit(t, workerRepo, "tag", "--no-sign", "v0.1.2")
 	remote := &fakeRemote{}
 	svc := Service{
 		WorkerRepo: workerRepo,
@@ -137,6 +139,24 @@ func TestDeploy(t *testing.T) {
 			t.Fatalf("deploy cmd missing %q: %s", want, remote.runs[2].cmd)
 		}
 	}
+	versionJSONPrefix := "printf %s '"
+	start := strings.Index(remote.runs[2].cmd, versionJSONPrefix)
+	if start < 0 {
+		t.Fatalf("deploy cmd missing version json payload: %s", remote.runs[2].cmd)
+	}
+	start += len(versionJSONPrefix)
+	end := strings.Index(remote.runs[2].cmd[start:], `' > data/runtime/version.json`)
+	if end < 0 {
+		t.Fatalf("deploy cmd missing version json redirect: %s", remote.runs[2].cmd)
+	}
+	raw := remote.runs[2].cmd[start : start+end]
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("version payload json invalid: %v", err)
+	}
+	if payload["worker_version"] != "v0.1.2" {
+		t.Fatalf("worker_version=%q", payload["worker_version"])
+	}
 }
 
 func TestDeployWaitHTTPSUsesHostResolvedDomain(t *testing.T) {
@@ -168,6 +188,31 @@ func TestDeployWaitHTTPSUsesHostResolvedDomain(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "data/runtime/version.json") {
 		t.Fatalf("deploy cmd missing version.json write: %s", cmd)
+	}
+}
+
+func TestBuildRuntimeVersionMetadataRequiresExactTag(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, workerRepo, "init")
+	runGit(t, workerRepo, "config", "user.email", "test@example.com")
+	runGit(t, workerRepo, "config", "user.name", "tester")
+	if err := os.WriteFile(filepath.Join(workerRepo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, workerRepo, "add", "README.md")
+	runGit(t, workerRepo, "commit", "-m", "init")
+
+	svc := Service{WorkerRepo: workerRepo}
+	_, err := svc.buildRuntimeVersionMetadata()
+	if err == nil {
+		t.Fatal("buildRuntimeVersionMetadata() expected error without tag")
+	}
+	if !strings.Contains(err.Error(), "git tag") {
+		t.Fatalf("error=%q", err)
 	}
 }
 
