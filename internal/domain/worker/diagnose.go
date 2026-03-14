@@ -36,8 +36,12 @@ func (s Service) buildRemoteDiagnoseCommand(server Server) string {
 		return fmt.Sprintf("echo %q >&2; exit 1", err.Error())
 	}
 	healthCheckJS := `const run=async()=>{const res=await fetch("http://127.0.0.1:8080/healthz");const raw=await res.text();const data=JSON.parse(raw);if(![200,503].includes(res.status)||data.llm?.deepseek?.ok!==true){throw new Error(raw)}};run().catch(e=>{console.error(e.message);process.exit(1);});`
+	tenantID := strings.TrimSpace(server.TenantID)
+	if tenantID == "" {
+		tenantID = "syl"
+	}
 	keySelection := "SYL_KEYS_RAW=$(grep -E '^SYL_LISTING_KEYS=' .env | tail -n 1 | cut -d'=' -f2-); " +
-		"SYL_KEY=$(printf '%s\\n' \"$SYL_KEYS_RAW\" | tr ',' '\\n' | awk -F: '$1==\"syl\"{print substr($0, index($0,\":\")+1); found=1; exit} END{if(!found && NF){print substr($0, index($0,\":\")+1)}}')"
+		fmt.Sprintf("SYL_KEY=$(printf '%%s\\\\n' \"$SYL_KEYS_RAW\" | tr ',' '\\\\n' | awk -F: '$1==\"%s\"{print substr($0, index($0,\":\")+1); found=1; exit} END{if(!found && NF){print substr($0, index($0,\":\")+1)}}')", tenantID)
 	return strings.Join([]string{
 		"set -euo pipefail",
 		fmt.Sprintf("cd %s", server.Dir),

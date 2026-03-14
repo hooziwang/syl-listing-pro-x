@@ -21,6 +21,9 @@ func TestDefaultServers(t *testing.T) {
 	if srv.User != "ubuntu" {
 		t.Fatalf("user=%q", srv.User)
 	}
+	if srv.TenantID != "syl" {
+		t.Fatalf("tenant=%q", srv.TenantID)
+	}
 }
 
 func TestDiagnoseExternal(t *testing.T) {

@@ -261,8 +261,10 @@ func TestDiagnoseRunsFullChecklist(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"tr ',' '\\n'",
-		"awk -F: '$1==\"syl\"",
+		"SYL_KEYS_RAW=",
+		"tr ','",
+		"awk -F:",
+		`$1=="syl"`,
 	} {
 		if !strings.Contains(cmd, want) {
 			t.Fatalf("diagnose cmd missing key selection logic %q: %s", want, cmd)
@@ -287,6 +289,53 @@ func TestDiagnoseCommandRequiresDeepseekHealthCheck(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "data.llm?.deepseek?.ok!==true") {
 		t.Fatalf("diagnose cmd should require deepseek health only: %s", cmd)
+	}
+}
+
+func TestDiagnoseUsesServerSpecificTenantForKeySelection(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workerRepo, "worker.config.json"), []byte(`{"server":{"domain":"worker.aelus.tech"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := Service{WorkerRepo: workerRepo}
+	cmd := svc.buildRemoteDiagnoseCommand(Server{
+		Name:     "demo-server",
+		Host:     "127.0.0.1",
+		User:     "ubuntu",
+		Port:     22,
+		Dir:      "/home/ubuntu/syl-listing-worker",
+		TenantID: "demo",
+	})
+	if !strings.Contains(cmd, `awk -F:`) || !strings.Contains(cmd, `$1=="demo"`) {
+		t.Fatalf("diagnose cmd missing server-specific tenant selection: %s", cmd)
+	}
+}
+
+func TestDiagnoseFallsBackToSylTenantWhenServerTenantMissing(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workerRepo, "worker.config.json"), []byte(`{"server":{"domain":"worker.aelus.tech"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := Service{WorkerRepo: workerRepo}
+	cmd := svc.buildRemoteDiagnoseCommand(Server{
+		Name: "anonymous-server",
+		Host: "127.0.0.1",
+		User: "ubuntu",
+		Port: 22,
+		Dir:  "/home/ubuntu/syl-listing-worker",
+	})
+	if !strings.Contains(cmd, `awk -F:`) || !strings.Contains(cmd, `$1=="syl"`) {
+		t.Fatalf("diagnose cmd missing default syl tenant fallback: %s", cmd)
 	}
 }
 

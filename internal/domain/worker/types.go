@@ -7,11 +7,12 @@ import (
 )
 
 type Server struct {
-	Name string
-	Host string
-	User string
-	Port int
-	Dir  string
+	Name     string
+	Host     string
+	User     string
+	Port     int
+	Dir      string
+	TenantID string
 }
 
 type Service struct {
@@ -133,11 +134,12 @@ type workerConfig struct {
 func DefaultServers() map[string]Server {
 	return map[string]Server{
 		"syl-server": {
-			Name: "syl-server",
-			Host: "159.75.124.28",
-			User: "ubuntu",
-			Port: 22,
-			Dir:  "/home/ubuntu/syl-listing-worker",
+			Name:     "syl-server",
+			Host:     "159.75.124.28",
+			User:     "ubuntu",
+			Port:     22,
+			Dir:      "/home/ubuntu/syl-listing-worker",
+			TenantID: "syl",
 		},
 	}
 }
