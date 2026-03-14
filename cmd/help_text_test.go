@@ -84,6 +84,7 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			parts: []string{
 				"先执行规则校验，再生成 rules.tar.gz、manifest.json 和公钥文件",
 				"stdout 输出产物目录路径",
+				"传 --print-path-context 时，stderr 打印本次解析到的路径上下文",
 				"SYL_LISTING_RULES_PRIVATE_KEY",
 			},
 		},
@@ -92,6 +93,8 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			build: newRulesPublishCmd,
 			parts: []string{
 				"会先打包，再调用 worker 管理接口发布",
+				"stdout 只输出已生效的 rules_version",
+				"传 --print-path-context 时，stderr 打印本次解析到的路径上下文",
 				"/v1/admin/tenant-rules/publish",
 				"--admin-token",
 			},
