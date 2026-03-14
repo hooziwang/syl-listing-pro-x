@@ -20,6 +20,7 @@ func newE2ESingleCmd() *cobra.Command {
 	var outputDir string
 	var workerURL string
 	var artifactsID string
+	var printPathContext bool
 	defaultKey := loadUserEnvValue(".syl-listing-pro", "SYL_LISTING_KEY")
 	defaultAdminToken := loadUserEnvValue(".syl-listing-pro-x", "ADMIN_TOKEN")
 
@@ -29,6 +30,7 @@ func newE2ESingleCmd() *cobra.Command {
 		Long: `单文件真实回归验收入口，固定执行 single-listing-compliance-gate。
 
 它会先发布规则，再诊断 worker，最后调用 syl-listing-pro，并对前台 verbose 异常和单文件 listing 细规则做验收。
+传 --print-path-context 时，会在规则发布阶段把路径上下文打印到 stderr。
 如果不传 --out，会默认落到 syl-listing-pro-x/out/<artifacts-id>。`,
 		Example: `  syl-listing-pro-x e2e single --tenant syl --input /abs/demo.md
   syl-listing-pro-x e2e single --tenant syl --input /abs/demo.md --out /abs/out
@@ -59,17 +61,18 @@ func newE2ESingleCmd() *cobra.Command {
 			resolvedArtifactsID, resolvedOutputDir := resolveSingleE2EPaths(artifactsID, outputDir)
 			resolvedPrivateKeyPath, restoreEnv := resolveSingleE2EPrivateKey(privateKeyPath)
 			defer restoreEnv()
-			svc := e2e.NewDefaultService(paths)
+			svc := newE2ERunner(cmd.ErrOrStderr())
 			result, err := svc.Run(cmd.Context(), e2e.RunInput{
-				CaseName:       "single-listing-compliance-gate",
-				Tenant:         tenant,
-				SYLKey:         resolvedKey,
-				AdminToken:     resolvedAdminToken,
-				PrivateKeyPath: resolvedPrivateKeyPath,
-				InputPath:      inputPath,
-				OutputDir:      resolvedOutputDir,
-				WorkerURL:      workerURL,
-				ArtifactsID:    resolvedArtifactsID,
+				CaseName:         "single-listing-compliance-gate",
+				Tenant:           tenant,
+				SYLKey:           resolvedKey,
+				AdminToken:       resolvedAdminToken,
+				PrivateKeyPath:   resolvedPrivateKeyPath,
+				InputPath:        inputPath,
+				OutputDir:        resolvedOutputDir,
+				WorkerURL:        workerURL,
+				ArtifactsID:      resolvedArtifactsID,
+				PrintPathContext: printPathContext,
 			})
 			if err != nil {
 				return err
@@ -87,6 +90,7 @@ func newE2ESingleCmd() *cobra.Command {
 	cmd.Flags().StringVar(&outputDir, "out", "", "输出目录；不传则自动推导")
 	cmd.Flags().StringVar(&workerURL, "worker", paths.WorkerURL, "worker 地址")
 	cmd.Flags().StringVar(&artifactsID, "artifacts-id", "", "artifacts 目录名；不传则自动生成")
+	cmd.Flags().BoolVar(&printPathContext, "print-path-context", false, "在规则发布阶段把路径上下文打印到 stderr")
 	return cmd
 }
 

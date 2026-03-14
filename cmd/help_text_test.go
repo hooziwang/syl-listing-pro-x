@@ -123,6 +123,7 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			parts: []string{
 				"会先发布规则，再诊断 worker，最后调用 syl-listing-pro",
 				"stdout 只打印 artifacts 目录路径",
+				"--print-path-context",
 				"可用用例：release-gate, architecture-gate, listing-compliance-gate, single-listing-compliance-gate",
 			},
 		},
@@ -132,6 +133,7 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			parts: []string{
 				"单文件真实回归验收入口",
 				"固定执行 single-listing-compliance-gate",
+				"--print-path-context",
 				"如果不传 --out，会默认落到 syl-listing-pro-x/out/<artifacts-id>",
 			},
 		},

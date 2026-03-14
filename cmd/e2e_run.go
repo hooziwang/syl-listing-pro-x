@@ -18,14 +18,16 @@ func newE2ERunCmd() *cobra.Command {
 	var outputDir string
 	var workerURL string
 	var artifactsID string
+	var printPathContext bool
 	defaultKey := loadUserEnvValue(".syl-listing-pro", "SYL_LISTING_KEY")
 	defaultAdminToken := loadUserEnvValue(".syl-listing-pro-x", "ADMIN_TOKEN")
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "执行 e2e 用例",
-	Long: `执行真实发布验收。会先发布规则，再诊断 worker，最后调用 syl-listing-pro。
+		Long: `执行真实发布验收。会先发布规则，再诊断 worker，最后调用 syl-listing-pro。
 
 这个命令依赖 PATH 中可执行的 syl-listing-pro，并会在运行时把 CLI stdout、stderr 和 verbose 日志写入 artifacts 目录。stdout 只打印 artifacts 目录路径。
+传 --print-path-context 时，会在规则发布阶段把路径上下文打印到 stderr。
 可用用例：release-gate, architecture-gate, listing-compliance-gate, single-listing-compliance-gate。
 其中 listing-compliance-gate 会固定使用 syl-listing-pro-x/testdata/e2e 下的输入样例，不要求传 --input；single-listing-compliance-gate 会对单个输入做真实执行、verbose 异常检查和 listing 细规则校验。`,
 		Example: `  syl-listing-pro-x e2e run --case release-gate --tenant syl --key <SYL_LISTING_KEY> --admin-token <ADMIN_TOKEN> --input /abs/demo.md --out /abs/out
@@ -64,17 +66,18 @@ func newE2ERunCmd() *cobra.Command {
 			if resolvedAdminToken == "" {
 				return fmt.Errorf("缺少 ADMIN_TOKEN：请传 --admin-token，或在 ~/.syl-listing-pro-x/.env 中设置 ADMIN_TOKEN=...")
 			}
-			svc := e2e.NewDefaultService(paths)
+			svc := newE2ERunner(cmd.ErrOrStderr())
 			result, err := svc.Run(cmd.Context(), e2e.RunInput{
-				CaseName:       resolvedCase,
-				Tenant:         tenant,
-				SYLKey:         resolvedKey,
-				AdminToken:     resolvedAdminToken,
-				PrivateKeyPath: privateKeyPath,
-				InputPath:      inputPath,
-				OutputDir:      outputDir,
-				WorkerURL:      workerURL,
-				ArtifactsID:    artifactsID,
+				CaseName:         resolvedCase,
+				Tenant:           tenant,
+				SYLKey:           resolvedKey,
+				AdminToken:       resolvedAdminToken,
+				PrivateKeyPath:   privateKeyPath,
+				InputPath:        inputPath,
+				OutputDir:        outputDir,
+				WorkerURL:        workerURL,
+				ArtifactsID:      artifactsID,
+				PrintPathContext: printPathContext,
 			})
 			if err != nil {
 				return err
@@ -92,6 +95,7 @@ func newE2ERunCmd() *cobra.Command {
 	cmd.Flags().StringVar(&outputDir, "out", "", "输出目录")
 	cmd.Flags().StringVar(&workerURL, "worker", paths.WorkerURL, "worker 地址")
 	cmd.Flags().StringVar(&artifactsID, "artifacts-id", "", "artifacts 目录名")
+	cmd.Flags().BoolVar(&printPathContext, "print-path-context", false, "在规则发布阶段把路径上下文打印到 stderr")
 	return cmd
 }
 

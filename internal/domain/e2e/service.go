@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,10 +19,11 @@ import (
 )
 
 type PublishRulesInput struct {
-	Tenant         string
-	WorkerURL      string
-	AdminToken     string
-	PrivateKeyPath string
+	Tenant           string
+	WorkerURL        string
+	AdminToken       string
+	PrivateKeyPath   string
+	PrintPathContext bool
 }
 
 type DiagnoseWorkerInput struct {
@@ -47,15 +49,16 @@ type Service struct {
 }
 
 type RunInput struct {
-	CaseName       string
-	Tenant         string
-	SYLKey         string
-	AdminToken     string
-	PrivateKeyPath string
-	InputPath      string
-	OutputDir      string
-	WorkerURL      string
-	ArtifactsID    string
+	CaseName         string
+	Tenant           string
+	SYLKey           string
+	AdminToken       string
+	PrivateKeyPath   string
+	InputPath        string
+	OutputDir        string
+	WorkerURL        string
+	ArtifactsID      string
+	PrintPathContext bool
 }
 
 type RunResult struct {
@@ -79,13 +82,17 @@ type listingComplianceRunSummary struct {
 	Error       string                       `json:"error,omitempty"`
 }
 
-func NewDefaultService(paths config.Paths) Service {
+func NewDefaultService(paths config.Paths, stderr io.Writer) Service {
+	if stderr == nil {
+		stderr = os.Stderr
+	}
 	return Service{
 		ArtifactsRoot: filepath.Join(paths.WorkspaceRoot, "syl-listing-pro-x", "artifacts"),
 		TestdataRoot:  filepath.Join(paths.WorkspaceRoot, "syl-listing-pro-x", "testdata", "e2e"),
 		RulesRoot:     paths.RulesRepo,
 		RulesRunner: defaultRulesRunner{
-			root: paths.RulesRepo,
+			root:   paths.RulesRepo,
+			stderr: stderr,
 		},
 		WorkerRunner: defaultWorkerRunner{},
 	}
@@ -124,10 +131,11 @@ func (s Service) runListingComplianceGate(ctx context.Context, in RunInput) (Run
 		return RunResult{}, err
 	}
 	if err := s.rulesRunner().Publish(ctx, PublishRulesInput{
-		Tenant:         in.Tenant,
-		WorkerURL:      in.WorkerURL,
-		AdminToken:     in.AdminToken,
-		PrivateKeyPath: in.PrivateKeyPath,
+		Tenant:           in.Tenant,
+		WorkerURL:        in.WorkerURL,
+		AdminToken:       in.AdminToken,
+		PrivateKeyPath:   in.PrivateKeyPath,
+		PrintPathContext: in.PrintPathContext,
 	}); err != nil {
 		return RunResult{}, err
 	}
@@ -253,10 +261,11 @@ func (s Service) runSingleListingComplianceGate(ctx context.Context, in RunInput
 		return RunResult{}, err
 	}
 	if err := s.rulesRunner().Publish(ctx, PublishRulesInput{
-		Tenant:         in.Tenant,
-		WorkerURL:      in.WorkerURL,
-		AdminToken:     in.AdminToken,
-		PrivateKeyPath: in.PrivateKeyPath,
+		Tenant:           in.Tenant,
+		WorkerURL:        in.WorkerURL,
+		AdminToken:       in.AdminToken,
+		PrivateKeyPath:   in.PrivateKeyPath,
+		PrintPathContext: in.PrintPathContext,
 	}); err != nil {
 		return RunResult{}, err
 	}
@@ -349,10 +358,11 @@ func (s Service) runGate(ctx context.Context, in RunInput, withArchitectureSumma
 		return RunResult{}, err
 	}
 	if err := s.rulesRunner().Publish(ctx, PublishRulesInput{
-		Tenant:         in.Tenant,
-		WorkerURL:      in.WorkerURL,
-		AdminToken:     in.AdminToken,
-		PrivateKeyPath: in.PrivateKeyPath,
+		Tenant:           in.Tenant,
+		WorkerURL:        in.WorkerURL,
+		AdminToken:       in.AdminToken,
+		PrivateKeyPath:   in.PrivateKeyPath,
+		PrintPathContext: in.PrintPathContext,
 	}); err != nil {
 		return RunResult{}, err
 	}
@@ -650,22 +660,47 @@ func validateEnglishSearchTermsLowercase(path string) error {
 }
 
 type defaultRulesRunner struct {
-	root string
+	root   string
+	stderr io.Writer
 }
 
 func (r defaultRulesRunner) Publish(ctx context.Context, in PublishRulesInput) error {
 	svc := drules.Service{Root: r.root}
 	version := drules.GenerateVersion(in.Tenant)
-	if _, err := svc.Package(in.Tenant, version, in.PrivateKeyPath); err != nil {
+	if in.PrintPathContext {
+		writeE2ERulesPathContext(r.stderr, e2eRulesPathContext{
+			RulesRepo:    r.root,
+			RulesVersion: version,
+		})
+	}
+	out, err := svc.Package(in.Tenant, version, in.PrivateKeyPath)
+	if err != nil {
 		return err
 	}
-	_, err := svc.Publish(ctx, drules.PublishInput{
+	if in.PrintPathContext {
+		writeE2ERulesPathContext(r.stderr, e2eRulesPathContext{
+			RulesRepo:    r.root,
+			PackageDir:   out.PackageDir,
+			RulesVersion: version,
+		})
+	}
+	resp, err := svc.Publish(ctx, drules.PublishInput{
 		Tenant:     in.Tenant,
 		Version:    version,
 		WorkerURL:  in.WorkerURL,
 		AdminToken: in.AdminToken,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if in.PrintPathContext {
+		writeE2ERulesPathContext(r.stderr, e2eRulesPathContext{
+			RulesRepo:    r.root,
+			PackageDir:   out.PackageDir,
+			RulesVersion: resp.RulesVersion,
+		})
+	}
+	return nil
 }
 
 type defaultWorkerRunner struct{}
