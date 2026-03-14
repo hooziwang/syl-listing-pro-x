@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/hooziwang/syl-listing-pro-x/internal/testutil"
 )
 
 func TestValidateListingCompliance(t *testing.T) {
@@ -165,7 +167,7 @@ func TestRepoRulesRootFromFileUsesGitWorkspaceInsteadOfCurrentCWD(t *testing.T) 
 	})
 
 	filePath := filepath.Join(repoRoot, "internal", "domain", "e2e", "compliance_test.go")
-	got := repoRulesRootFromFile(t, filePath)
+	got := mustFindRulesRootFromFile(t, filePath)
 	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
 		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
 	}
@@ -202,7 +204,7 @@ func TestRepoRulesRootFromFileSupportsLinkedWorktree(t *testing.T) {
 	})
 
 	filePath := filepath.Join(worktreePath, "internal", "domain", "e2e", "compliance_test.go")
-	got := repoRulesRootFromFile(t, filePath)
+	got := mustFindRulesRootFromFile(t, filePath)
 	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
 		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
 	}
@@ -216,7 +218,7 @@ func TestRepoRulesRootFromFileFallsBackToSiblingRepoNamesWithoutGit(t *testing.T
 	mkdirAllForCompliancePathTest(t, filepath.Dir(filePath))
 	mkdirAllForCompliancePathTest(t, rulesRoot)
 
-	got := repoRulesRootFromFile(t, filePath)
+	got := mustFindRulesRootFromFile(t, filePath)
 	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
 		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
 	}
@@ -230,7 +232,7 @@ func TestRepoRulesRootFromFileFallsBackToLegacyRulesDirWithoutGit(t *testing.T) 
 	mkdirAllForCompliancePathTest(t, filepath.Dir(filePath))
 	mkdirAllForCompliancePathTest(t, rulesRoot)
 
-	got := repoRulesRootFromFile(t, filePath)
+	got := mustFindRulesRootFromFile(t, filePath)
 	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
 		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
 	}
@@ -242,68 +244,16 @@ func repoRulesRoot(t *testing.T) string {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return repoRulesRootFromFile(t, file)
+	return mustFindRulesRootFromFile(t, file)
 }
 
-func repoRulesRootFromFile(t *testing.T, file string) string {
+func mustFindRulesRootFromFile(t *testing.T, file string) string {
 	t.Helper()
-
-	if workspaceRoot, ok := repoWorkspaceRootFromFile(file); ok {
-		for _, name := range []string{"syl-listing-pro-rules", "rules"} {
-			candidate := filepath.Join(workspaceRoot, name)
-			if dirExistsForComplianceTest(candidate) {
-				return candidate
-			}
-		}
-	}
-
-	for _, name := range []string{"syl-listing-pro-rules", "rules"} {
-		candidate := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", name))
-		if dirExistsForComplianceTest(candidate) {
-			return candidate
-		}
-	}
-	t.Fatal("未找到 rules 仓目录")
-	return ""
-}
-
-func repoWorkspaceRootFromFile(file string) (string, bool) {
-	startDir := filepath.Dir(file)
-	topLevel, ok := gitTrimmedOutputForComplianceTest(startDir, "rev-parse", "--show-toplevel")
+	path, ok := testutil.FindSiblingRepoFromFile(file, "syl-listing-pro-rules", "rules")
 	if !ok {
-		return "", false
+		t.Fatal("未找到 rules 仓目录")
 	}
-	commonDir, ok := gitTrimmedOutputForComplianceTest(startDir, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if !ok {
-		return "", false
-	}
-	if filepath.Base(commonDir) != ".git" {
-		return "", false
-	}
-	repoRoot := filepath.Dir(commonDir)
-	if filepath.Clean(topLevel) != filepath.Clean(repoRoot) {
-		return filepath.Dir(repoRoot), true
-	}
-	return filepath.Dir(topLevel), true
-}
-
-func gitTrimmedOutputForComplianceTest(dir string, args ...string) (string, bool) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", false
-	}
-	value := strings.TrimSpace(string(out))
-	if value == "" {
-		return "", false
-	}
-	return value, true
-}
-
-func dirExistsForComplianceTest(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+	return path
 }
 
 func runGitForCompliancePathTest(t *testing.T, dir string, args ...string) string {
