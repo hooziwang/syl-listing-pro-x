@@ -3,13 +3,12 @@ package e2e
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestValidateListingCompliance(t *testing.T) {
-	rulesRoot := repoRulesRoot(t)
+	rulesRoot := writeRulesFixtureRoot(t)
 
 	t.Run("valid english and chinese markdown pass", func(t *testing.T) {
 		enPath, cnPath := writeListingMarkdownPair(t, validEnglishMarkdown(), validChineseMarkdown())
@@ -135,15 +134,6 @@ func TestValidateListingCompliance(t *testing.T) {
 		}
 		assertHasViolation(t, report, "中文", "搜索词")
 	})
-}
-
-func repoRulesRoot(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "rules"))
 }
 
 func writeListingMarkdownPair(t *testing.T, english string, chinese string) (string, string) {

@@ -120,6 +120,8 @@ func TestServicePackageAllowsBundledDevKeyWithExplicitOptIn(t *testing.T) {
 	mkdirAll(t, filepath.Dir(keyPath))
 	writeFile(t, keyPath, mustReadFile(t, generatePrivateKey(t, root)))
 	t.Setenv("SYL_LISTING_ALLOW_DEV_PRIVATE_KEY", "1")
+	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv("CI", "")
 
 	svc := Service{Root: root}
 	out, err := svc.Package("demo", "rules-demo-20260310-000000-devoptin", keyPath)

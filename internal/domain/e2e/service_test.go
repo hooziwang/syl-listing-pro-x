@@ -340,7 +340,7 @@ func TestRunListingComplianceGate(t *testing.T) {
 		CLIPath:       cliPath,
 		ArtifactsRoot: artifactsDir,
 		TestdataRoot:  testdataDir,
-		RulesRoot:     repoRulesRoot(t),
+		RulesRoot:     writeRulesFixtureRoot(t),
 		RulesRunner:   &fakeRulesRunner{},
 		WorkerRunner:  &fakeWorkerRunner{},
 	}
@@ -396,7 +396,7 @@ func TestRunSingleListingComplianceGate(t *testing.T) {
 	svc := Service{
 		CLIPath:       cliPath,
 		ArtifactsRoot: artifactsDir,
-		RulesRoot:     repoRulesRoot(t),
+		RulesRoot:     writeRulesFixtureRoot(t),
 		RulesRunner:   &fakeRulesRunner{},
 		WorkerRunner:  &fakeWorkerRunner{},
 	}
@@ -450,7 +450,7 @@ func TestRunSingleListingComplianceGateIgnoresUnrelatedSearchTermsLength(t *test
 	svc := Service{
 		CLIPath:       cliPath,
 		ArtifactsRoot: artifactsDir,
-		RulesRoot:     repoRulesRoot(t),
+		RulesRoot:     writeRulesFixtureRoot(t),
 		RulesRunner:   &fakeRulesRunner{},
 		WorkerRunner:  &fakeWorkerRunner{},
 	}
@@ -488,7 +488,7 @@ func TestRunListingComplianceGateFailsOnVerboseErrorSignal(t *testing.T) {
 		CLIPath:       cliPath,
 		ArtifactsRoot: artifactsDir,
 		TestdataRoot:  testdataDir,
-		RulesRoot:     repoRulesRoot(t),
+		RulesRoot:     writeRulesFixtureRoot(t),
 		RulesRunner:   &fakeRulesRunner{},
 		WorkerRunner:  &fakeWorkerRunner{},
 	}
@@ -525,7 +525,7 @@ func TestRunListingComplianceGateFailsOnStderrOutput(t *testing.T) {
 		CLIPath:       cliPath,
 		ArtifactsRoot: artifactsDir,
 		TestdataRoot:  testdataDir,
-		RulesRoot:     repoRulesRoot(t),
+		RulesRoot:     writeRulesFixtureRoot(t),
 		RulesRunner:   &fakeRulesRunner{},
 		WorkerRunner:  &fakeWorkerRunner{},
 	}
@@ -562,7 +562,7 @@ func TestRunListingComplianceGateFailsOnComplianceViolation(t *testing.T) {
 		CLIPath:       cliPath,
 		ArtifactsRoot: artifactsDir,
 		TestdataRoot:  testdataDir,
-		RulesRoot:     repoRulesRoot(t),
+		RulesRoot:     writeRulesFixtureRoot(t),
 		RulesRunner:   &fakeRulesRunner{},
 		WorkerRunner:  &fakeWorkerRunner{},
 	}
