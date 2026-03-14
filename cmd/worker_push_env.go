@@ -12,7 +12,7 @@ func newWorkerPushEnvCmd() *cobra.Command {
 		Short: "下发 .env 并重启 worker",
 		Long: `把本地 worker/.env 同步到远端 worker 目录，并重启 worker-api 与 worker-runner。
 
-适合只更新运行参数、不改代码或镜像的场景。命令依赖 SSH，默认服务器别名是 syl-server。`,
+适合只更新运行参数、不改代码或镜像的场景。命令依赖 SSH，必须显式传入 --server。`,
 		Example: `  syl-listing-pro-x worker push-env --server syl-server`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := worker.Service{
@@ -24,6 +24,7 @@ func newWorkerPushEnvCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&server, "server", "syl-server", "服务器别名")
+	cmd.Flags().StringVar(&server, "server", "", "服务器别名")
+	_ = cmd.MarkFlagRequired("server")
 	return cmd
 }

@@ -241,6 +241,48 @@ func TestWorkerDiagnoseExternalCmdMarksBaseURLAsRequired(t *testing.T) {
 	})
 }
 
+func TestWorkerSSHCommandsLeaveServerDefaultEmpty(t *testing.T) {
+	cases := []struct {
+		name  string
+		build func() *cobra.Command
+	}{
+		{name: "deploy", build: newWorkerDeployCmd},
+		{name: "push-env", build: newWorkerPushEnvCmd},
+		{name: "logs", build: newWorkerLogsCmd},
+		{name: "diagnose", build: newWorkerDiagnoseCmd},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := tc.build()
+			if got := cmd.Flag("server").DefValue; got != "" {
+				t.Fatalf("server default = %q, want empty", got)
+			}
+		})
+	}
+}
+
+func TestWorkerSSHCommandsMarkServerAsRequired(t *testing.T) {
+	cases := []struct {
+		name  string
+		build func() *cobra.Command
+	}{
+		{name: "deploy", build: newWorkerDeployCmd},
+		{name: "push-env", build: newWorkerPushEnvCmd},
+		{name: "logs", build: newWorkerLogsCmd},
+		{name: "diagnose", build: newWorkerDiagnoseCmd},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := tc.build()
+			if _, ok := cmd.Flag("server").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
+				t.Fatalf("server flag should be marked required")
+			}
+		})
+	}
+}
+
 func TestWorkerDiagnoseExternalCmdLeavesExpectedTenantEmptyByDefault(t *testing.T) {
 	withPathsForTest(t, func() {
 		cmd := newWorkerDiagnoseExternalCmd()

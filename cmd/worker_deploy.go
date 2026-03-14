@@ -19,7 +19,7 @@ func newWorkerDeployCmd() *cobra.Command {
 		Short: "远程部署 worker",
 		Long: `把本地 worker/ 仓库打包上传到远端并执行 docker compose 部署。
 
-命令依赖 SSH，默认服务器别名是 syl-server。部署时会清理远端目录中除 data 和 .env 以外的内容，会根据本地 worker.config.json 生成 .compose.env；如果本地存在 worker/.env，也会同步本地 worker/.env。
+命令依赖 SSH，必须显式传入 --server。部署时会清理远端目录中除 data 和 .env 以外的内容，会根据本地 worker.config.json 生成 .compose.env；如果本地存在 worker/.env，也会同步本地 worker/.env。
 部署完成后默认执行内部诊断；除非显式传 --skip-diagnose。`,
 		Example: `  syl-listing-pro-x worker deploy --server syl-server
   syl-listing-pro-x worker deploy --server syl-server --skip-build
@@ -41,7 +41,8 @@ func newWorkerDeployCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&server, "server", "syl-server", "服务器别名")
+	cmd.Flags().StringVar(&server, "server", "", "服务器别名")
+	_ = cmd.MarkFlagRequired("server")
 	cmd.Flags().BoolVar(&skipBuild, "skip-build", false, "跳过镜像构建")
 	cmd.Flags().BoolVar(&stopLegacy, "stop-legacy", false, "停止旧 systemd 服务")
 	cmd.Flags().BoolVar(&installDocker, "install-docker", false, "缺少 docker 时自动安装")

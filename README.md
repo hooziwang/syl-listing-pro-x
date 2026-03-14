@@ -256,6 +256,8 @@ dir: /opt/syl-listing-worker
 syl-listing-pro-x worker deploy --server syl-server
 ```
 
+必须显式传入 `--server`，不会再回退到某个默认服务器。
+
 部署流程来自 `internal/domain/worker/deploy.go`：
 
 1. 读取 `worker.config.json`
@@ -302,6 +304,8 @@ syl-listing-pro-x worker deploy --server syl-server
 syl-listing-pro-x worker push-env --server syl-server
 ```
 
+必须显式传入 `--server`。
+
 用途很单纯：
 
 1. 从本地 `worker/.env` 读取环境变量
@@ -316,6 +320,8 @@ syl-listing-pro-x worker push-env --server syl-server
 ```bash
 syl-listing-pro-x worker diagnose --server syl-server
 ```
+
+必须显式传入 `--server`。
 
 这是“远端内部诊断”，通过 SSH 到服务器上执行检查脚本。  
 它当前会验证：
@@ -405,6 +411,8 @@ syl-listing-pro-x worker logs --server syl-server --service worker-api
 syl-listing-pro-x worker logs --server syl-server --service worker-api --service nginx --tail 50 --since 10m
 syl-listing-pro-x worker logs --server syl-server --no-follow
 ```
+
+必须显式传入 `--server`。
 
 这是远端实时日志透传，底层会走 `ssh` + `docker compose logs`。
 
@@ -640,6 +648,7 @@ bin/syl-listing-pro-x e2e run \
 - `rules publish` 成功的前提是对应版本的 `manifest.json` 和 `rules.tar.gz` 已经存在且内容一致。
 - `rules package` 依赖本机有可用的 `openssl`。
 - `worker deploy` / `push-env` / `diagnose` / `logs` 都依赖本机有 `ssh`、`scp`。
+- `worker deploy` / `push-env` / `diagnose` / `logs` 都必须显式传入 `--server`，不会回退到默认远端。
 - `worker deploy` 会保留远端 `data/` 和 `.env`，其余目录会被清空后再同步。
 - `worker diagnose-external` 必须显式传入 `--base-url`，避免误连默认环境。
 - `worker check-remote-version` 会把本地 `worker` 仓 HEAD 与远端 `/v1/admin/version` 对比，不是比较 `syl-listing-pro-x` 自己的 commit。
