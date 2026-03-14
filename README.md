@@ -372,6 +372,8 @@ syl-listing-pro-x worker diagnose-external --base-url https://worker.aelus.tech 
 syl-listing-pro-x worker check-remote-version --base-url https://worker.aelus.tech
 ```
 
+必须显式传入 `--base-url`，不会再回退到默认 worker 地址。
+
 它会：
 
 1. 读取本地 `worker` 仓 `git rev-parse --short HEAD`
@@ -638,6 +640,7 @@ bin/syl-listing-pro-x e2e run \
 - `worker deploy` / `push-env` / `diagnose` / `logs` 都依赖本机有 `ssh`、`scp`。
 - `worker deploy` 会保留远端 `data/` 和 `.env`，其余目录会被清空后再同步。
 - `worker check-remote-version` 会把本地 `worker` 仓 HEAD 与远端 `/v1/admin/version` 对比，不是比较 `syl-listing-pro-x` 自己的 commit。
+- `worker check-remote-version` 必须显式传入 `--base-url`，避免误连默认环境。
 - `e2e run` / `e2e single` 都依赖系统 PATH 中存在可执行的 `syl-listing-pro`，否则会在 `exec.LookPath("syl-listing-pro")` 时报错。
 - `release-gate` / `architecture-gate` 只会收集输出目录根层级的 `.md` / `.docx` 文件，不会递归子目录。
 - `listing-compliance-gate` 会为 `testdata/e2e` 下的每个输入样例创建独立输出子目录。
