@@ -343,6 +343,8 @@ syl-listing-pro-x worker diagnose --server syl-server
 syl-listing-pro-x worker diagnose-external --base-url https://worker.aelus.tech --key <SYL_LISTING_KEY>
 ```
 
+必须显式传入 `--base-url`，不会再回退到默认 worker 地址。
+
 这是“外部黑盒诊断”，直接打公网接口，不走 SSH。  
 它按顺序检查：
 
@@ -362,7 +364,7 @@ syl-listing-pro-x worker diagnose-external --base-url https://worker.aelus.tech 
 常用参数：
 
 - `--key`：必填
-- `--base-url`：默认取 `paths.WorkerURL`
+- `--base-url`：必填，明确指定 worker 对外地址
 - `--with-generate`：额外验证真实生成链路
 - `--timeout`：生成事件流超时，默认 `5m`
 
@@ -637,6 +639,7 @@ bin/syl-listing-pro-x e2e run \
 - `rules package` 依赖本机有可用的 `openssl`。
 - `worker deploy` / `push-env` / `diagnose` / `logs` 都依赖本机有 `ssh`、`scp`。
 - `worker deploy` 会保留远端 `data/` 和 `.env`，其余目录会被清空后再同步。
+- `worker diagnose-external` 必须显式传入 `--base-url`，避免误连默认环境。
 - `worker check-remote-version` 会把本地 `worker` 仓 HEAD 与远端 `/v1/admin/version` 对比，不是比较 `syl-listing-pro-x` 自己的 commit。
 - `e2e run` / `e2e single` 都依赖系统 PATH 中存在可执行的 `syl-listing-pro`，否则会在 `exec.LookPath("syl-listing-pro")` 时报错。
 - `release-gate` / `architecture-gate` 只会收集输出目录根层级的 `.md` / `.docx` 文件，不会递归子目录。
