@@ -253,6 +253,21 @@ func TestDiagnoseRunsFullChecklist(t *testing.T) {
 	if strings.Contains(cmd, "python3 -c") {
 		t.Fatalf("diagnose cmd should not invoke python3: %s", cmd)
 	}
+	for _, unwanted := range []string{
+		"cut -d',' -f1",
+	} {
+		if strings.Contains(cmd, unwanted) {
+			t.Fatalf("diagnose cmd should not keep first-key-only parsing %q: %s", unwanted, cmd)
+		}
+	}
+	for _, want := range []string{
+		"tr ',' '\\n'",
+		"awk -F: '$1==\"syl\"",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("diagnose cmd missing key selection logic %q: %s", want, cmd)
+		}
+	}
 }
 
 func TestDiagnoseCommandRequiresDeepseekHealthCheck(t *testing.T) {

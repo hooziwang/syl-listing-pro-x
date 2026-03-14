@@ -36,13 +36,15 @@ func (s Service) buildRemoteDiagnoseCommand(server Server) string {
 		return fmt.Sprintf("echo %q >&2; exit 1", err.Error())
 	}
 	healthCheckJS := `const run=async()=>{const res=await fetch("http://127.0.0.1:8080/healthz");const raw=await res.text();const data=JSON.parse(raw);if(![200,503].includes(res.status)||data.llm?.deepseek?.ok!==true){throw new Error(raw)}};run().catch(e=>{console.error(e.message);process.exit(1);});`
+	keySelection := "SYL_KEYS_RAW=$(grep -E '^SYL_LISTING_KEYS=' .env | tail -n 1 | cut -d'=' -f2-); " +
+		"SYL_KEY=$(printf '%s\\n' \"$SYL_KEYS_RAW\" | tr ',' '\\n' | awk -F: '$1==\"syl\"{print substr($0, index($0,\":\")+1); found=1; exit} END{if(!found && NF){print substr($0, index($0,\":\")+1)}}')"
 	return strings.Join([]string{
 		"set -euo pipefail",
 		fmt.Sprintf("cd %s", server.Dir),
 		fmt.Sprintf("running=\"$(%s)\"", composeFallbackCommand("ps --services --status running")),
 		"for svc in redis worker-api worker-runner nginx certbot; do echo \"$running\" | grep -qx \"$svc\" || { echo \"服务未运行: $svc\" >&2; exit 1; }; done",
 		composeFallbackCommand(fmt.Sprintf("exec -T worker-api node -e %s", shellQuoteArg(healthCheckJS))),
-		"SYL_KEY=$(grep -E '^SYL_LISTING_KEYS=' .env | tail -n 1 | cut -d'=' -f2- | cut -d',' -f1 | cut -d':' -f2-)",
+		keySelection,
 		"[ -n \"$SYL_KEY\" ]",
 		composeFallbackCommand("exec -T -e SYL_KEY=\"$SYL_KEY\" worker-api node -e \"const run=async()=>{const exchange=await fetch('http://127.0.0.1:8080/v1/auth/exchange',{method:'POST',headers:{Authorization:'Bearer ' + process.env.SYL_KEY}});if(!exchange.ok) throw new Error('auth exchange failed');const j=await exchange.json();const rules=await fetch('http://127.0.0.1:8080/v1/rules/resolve?current=',{headers:{Authorization:'Bearer ' + j.access_token}});if(!rules.ok) throw new Error('rules resolve failed');const r=await rules.json();if(!r.rules_version) throw new Error('rules_version missing')};run().catch(e=>{console.error(e.message);process.exit(1);});\""),
 		fmt.Sprintf("%s | tr -d '\\r' | grep -qx PONG", composeFallbackCommand("exec -T redis redis-cli ping")),
