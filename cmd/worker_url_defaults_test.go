@@ -297,3 +297,47 @@ func TestE2ERunCmdUnknownCaseWinsBeforeInputValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestWriteRulesCommandPathContextForPackage(t *testing.T) {
+	var out bytes.Buffer
+	writeRulesCommandPathContext(&out, "package", rulesCommandPathContext{
+		WorkspaceRoot: "/tmp/workspace",
+		RulesRepo:     "/tmp/rules",
+		PackageDir:    "/tmp/rules/dist/syl/rules-syl-20260314-000000-abcd12",
+	})
+
+	output := out.String()
+	for _, part := range []string{
+		"[rules package] 路径上下文",
+		"WorkspaceRoot=/tmp/workspace",
+		"RulesRepo=/tmp/rules",
+		"PackageDir=/tmp/rules/dist/syl/rules-syl-20260314-000000-abcd12",
+	} {
+		if !strings.Contains(output, part) {
+			t.Fatalf("output missing %q\noutput:\n%s", part, output)
+		}
+	}
+}
+
+func TestWriteRulesCommandPathContextForPublish(t *testing.T) {
+	var out bytes.Buffer
+	writeRulesCommandPathContext(&out, "publish", rulesCommandPathContext{
+		WorkspaceRoot: "/tmp/workspace",
+		RulesRepo:     "/tmp/rules",
+		PackageDir:    "/tmp/rules/dist/syl/rules-syl-20260314-000000-abcd12",
+		RulesVersion:  "rules-syl-20260314-000000-abcd12",
+	})
+
+	output := out.String()
+	for _, part := range []string{
+		"[rules publish] 路径上下文",
+		"WorkspaceRoot=/tmp/workspace",
+		"RulesRepo=/tmp/rules",
+		"PackageDir=/tmp/rules/dist/syl/rules-syl-20260314-000000-abcd12",
+		"RulesVersion=rules-syl-20260314-000000-abcd12",
+	} {
+		if !strings.Contains(output, part) {
+			t.Fatalf("output missing %q\noutput:\n%s", part, output)
+		}
+	}
+}
