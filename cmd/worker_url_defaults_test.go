@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/hooziwang/syl-listing-pro-x/internal/domain/e2e"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +20,33 @@ func withPathsForTest(t *testing.T, fn func()) {
 		paths = oldPaths
 	})
 	fn()
+}
+
+func withE2ERunnerFactoryForTest(t *testing.T, factory func(stderr io.Writer) e2eRunner, fn func()) {
+	t.Helper()
+	oldFactory := newE2ERunner
+	newE2ERunner = factory
+	t.Cleanup(func() {
+		newE2ERunner = oldFactory
+	})
+	fn()
+}
+
+type fakeE2ERunner struct {
+	listCasesResult []string
+	runResult       e2e.RunResult
+	runErr          error
+	lastRunInput    e2e.RunInput
+	lastStderr      io.Writer
+}
+
+func (f *fakeE2ERunner) ListCases() []string {
+	return f.listCasesResult
+}
+
+func (f *fakeE2ERunner) Run(_ context.Context, in e2e.RunInput) (e2e.RunResult, error) {
+	f.lastRunInput = in
+	return f.runResult, f.runErr
 }
 
 func TestE2ERunCmdUsesPathsWorkerURLDefault(t *testing.T) {
@@ -36,6 +66,112 @@ func TestE2ESingleCmdUsesPathsWorkerURLDefault(t *testing.T) {
 		if got := cmd.Flag("worker").DefValue; got != paths.WorkerURL {
 			t.Fatalf("worker default = %q, want %q", got, paths.WorkerURL)
 		}
+	})
+}
+
+func TestE2ERunCmdExposesPrintPathContextFlag(t *testing.T) {
+	withPathsForTest(t, func() {
+		cmd := newE2ERunCmd()
+		flag := cmd.Flag("print-path-context")
+		if flag == nil {
+			t.Fatal("print-path-context flag missing")
+		}
+		if got := flag.DefValue; got != "false" {
+			t.Fatalf("print-path-context default = %q, want false", got)
+		}
+	})
+}
+
+func TestE2ESingleCmdExposesPrintPathContextFlag(t *testing.T) {
+	withPathsForTest(t, func() {
+		cmd := newE2ESingleCmd()
+		flag := cmd.Flag("print-path-context")
+		if flag == nil {
+			t.Fatal("print-path-context flag missing")
+		}
+		if got := flag.DefValue; got != "false" {
+			t.Fatalf("print-path-context default = %q, want false", got)
+		}
+	})
+}
+
+func TestE2ERunCmdPassesPrintPathContextAndErrWriter(t *testing.T) {
+	withPathsForTest(t, func() {
+		runner := &fakeE2ERunner{runResult: e2e.RunResult{ArtifactsDir: "/tmp/artifacts-run"}}
+		withE2ERunnerFactoryForTest(t, func(stderr io.Writer) e2eRunner {
+			runner.lastStderr = stderr
+			return runner
+		}, func() {
+			cmd := newE2ERunCmd()
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{
+				"--case", "release-gate",
+				"--tenant", "syl",
+				"--key", "key",
+				"--admin-token", "admin",
+				"--input", "/tmp/demo.md",
+				"--out", "/tmp/out",
+				"--print-path-context",
+			})
+
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if !runner.lastRunInput.PrintPathContext {
+				t.Fatal("PrintPathContext=false, want true")
+			}
+			if runner.lastStderr != &stderr {
+				t.Fatal("stderr writer was not forwarded to e2e service")
+			}
+			if got := stdout.String(); got != "/tmp/artifacts-run\n" {
+				t.Fatalf("stdout = %q", got)
+			}
+			if got := stderr.String(); got != "" {
+				t.Fatalf("stderr = %q, want empty", got)
+			}
+		})
+	})
+}
+
+func TestE2ESingleCmdPassesPrintPathContextAndErrWriter(t *testing.T) {
+	withPathsForTest(t, func() {
+		runner := &fakeE2ERunner{runResult: e2e.RunResult{ArtifactsDir: "/tmp/artifacts-single"}}
+		withE2ERunnerFactoryForTest(t, func(stderr io.Writer) e2eRunner {
+			runner.lastStderr = stderr
+			return runner
+		}, func() {
+			cmd := newE2ESingleCmd()
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs([]string{
+				"--tenant", "syl",
+				"--key", "key",
+				"--admin-token", "admin",
+				"--input", "/tmp/demo.md",
+				"--print-path-context",
+			})
+
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if !runner.lastRunInput.PrintPathContext {
+				t.Fatal("PrintPathContext=false, want true")
+			}
+			if runner.lastStderr != &stderr {
+				t.Fatal("stderr writer was not forwarded to e2e service")
+			}
+			if got := stdout.String(); got != "/tmp/artifacts-single\n" {
+				t.Fatalf("stdout = %q", got)
+			}
+			if got := stderr.String(); got != "" {
+				t.Fatalf("stderr = %q, want empty", got)
+			}
+		})
 	})
 }
 

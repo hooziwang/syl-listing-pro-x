@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -14,16 +15,18 @@ type fakeRulesRunner struct {
 }
 
 type rulesCall struct {
-	tenant         string
-	workerURL      string
-	privateKeyPath string
+	tenant           string
+	workerURL        string
+	privateKeyPath   string
+	printPathContext bool
 }
 
 func (f *fakeRulesRunner) Publish(ctx context.Context, in PublishRulesInput) error {
 	f.calls = append(f.calls, rulesCall{
-		tenant:         in.Tenant,
-		workerURL:      in.WorkerURL,
-		privateKeyPath: in.PrivateKeyPath,
+		tenant:           in.Tenant,
+		workerURL:        in.WorkerURL,
+		privateKeyPath:   in.PrivateKeyPath,
+		printPathContext: in.PrintPathContext,
 	})
 	return nil
 }
@@ -215,6 +218,117 @@ func TestRunArchitectureGate(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(result.ArtifactsDir, name)); err != nil {
 			t.Fatalf("artifact %s missing: %v", name, err)
 		}
+	}
+}
+
+func TestRunReleaseGatePassesPrintPathContextToRulesRunner(t *testing.T) {
+	root := t.TempDir()
+	inputDir := filepath.Join(root, "input")
+	outDir := filepath.Join(root, "out")
+	artifactsDir := filepath.Join(root, "artifacts")
+	if err := os.MkdirAll(inputDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	inputPath := filepath.Join(inputDir, "demo.md")
+	if err := os.WriteFile(inputPath, []byte("demo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cliPath := filepath.Join(root, "syl-listing-pro")
+	script := "#!/bin/sh\n" +
+		"out=\"\"\n" +
+		"while [ \"$#\" -gt 0 ]; do\n" +
+		"  if [ \"$1\" = \"-o\" ] || [ \"$1\" = \"--out\" ]; then out=\"$2\"; shift 2; continue; fi\n" +
+		"  shift\n" +
+		"done\n" +
+		"mkdir -p \"$out\"\n" +
+		"printf '# EN\\n\\n## 搜索词\\npaper lanterns classroom decor\\n' > \"$out/demo_abcd_en.md\"\n" +
+		"printf '# CN\\n\\n## 搜索词\\n中文搜索词\\n' > \"$out/demo_abcd_cn.md\"\n" +
+		"printf 'docx' > \"$out/demo_abcd_en.docx\"\n" +
+		"printf 'docx' > \"$out/demo_abcd_cn.docx\"\n" +
+		"echo '任务完成：成功 1，失败 0，总耗时 1s'\n"
+	if err := os.WriteFile(cliPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	rulesRunner := &fakeRulesRunner{}
+	workerRunner := &fakeWorkerRunner{}
+	svc := Service{
+		CLIPath:       cliPath,
+		ArtifactsRoot: artifactsDir,
+		RulesRunner:   rulesRunner,
+		WorkerRunner:  workerRunner,
+	}
+	_, err := svc.Run(context.Background(), RunInput{
+		CaseName:         "release-gate",
+		Tenant:           "syl",
+		WorkerURL:        "https://worker.aelus.tech",
+		SYLKey:           "key",
+		AdminToken:       "admin",
+		InputPath:        inputPath,
+		OutputDir:        outDir,
+		ArtifactsID:      "run-print-path-context",
+		PrintPathContext: true,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(rulesRunner.calls) != 1 {
+		t.Fatalf("unexpected rules calls: %+v", rulesRunner.calls)
+	}
+	if !rulesRunner.calls[0].printPathContext {
+		t.Fatalf("printPathContext=false, want true")
+	}
+}
+
+func TestDefaultRulesRunnerWritesPathContextToConfiguredWriterOnFailure(t *testing.T) {
+	var stderr bytes.Buffer
+	runner := defaultRulesRunner{
+		root:   t.TempDir(),
+		stderr: &stderr,
+	}
+
+	err := runner.Publish(context.Background(), PublishRulesInput{
+		Tenant:           "syl",
+		WorkerURL:        "https://worker.example.test",
+		AdminToken:       "admin",
+		PrivateKeyPath:   "/tmp/missing.pem",
+		PrintPathContext: true,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	output := stderr.String()
+	for _, part := range []string{
+		"[e2e rules publish] 路径上下文",
+		"RulesRepo=",
+		"RulesVersion=rules-syl-",
+	} {
+		if !strings.Contains(output, part) {
+			t.Fatalf("stderr missing %q\nstderr:\n%s", part, output)
+		}
+	}
+}
+
+func TestDefaultRulesRunnerKeepsWriterQuietWhenPrintPathContextDisabled(t *testing.T) {
+	var stderr bytes.Buffer
+	runner := defaultRulesRunner{
+		root:   t.TempDir(),
+		stderr: &stderr,
+	}
+
+	err := runner.Publish(context.Background(), PublishRulesInput{
+		Tenant:           "syl",
+		WorkerURL:        "https://worker.example.test",
+		AdminToken:       "admin",
+		PrivateKeyPath:   "/tmp/missing.pem",
+		PrintPathContext: false,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := stderr.String(); got != "" {
+		t.Fatalf("stderr=%q, want empty", got)
 	}
 }
 
