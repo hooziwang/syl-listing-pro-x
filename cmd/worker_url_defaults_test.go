@@ -87,6 +87,15 @@ func TestWorkerDiagnoseExternalCmdUsesPathsWorkerURLDefault(t *testing.T) {
 	})
 }
 
+func TestWorkerDiagnoseExternalCmdLeavesExpectedTenantEmptyByDefault(t *testing.T) {
+	withPathsForTest(t, func() {
+		cmd := newWorkerDiagnoseExternalCmd()
+		if got := cmd.Flag("expected-tenant").DefValue; got != "" {
+			t.Fatalf("expected-tenant default = %q, want empty", got)
+		}
+	})
+}
+
 func TestE2ERunCmdLoadsKeyAndAdminTokenDefaultsFromUserEnv(t *testing.T) {
 	withPathsForTest(t, func() {
 		homeDir := t.TempDir()

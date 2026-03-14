@@ -112,6 +112,9 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 	if strings.TrimSpace(auth.AccessToken) == "" {
 		return fmt.Errorf("auth exchange 缺少 access_token")
 	}
+	if err := ensureExpectedTenant(in.ExpectedTenant, auth.TenantID, "auth exchange"); err != nil {
+		return err
+	}
 
 	var resolve resolveRulesResponse
 	if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/rules/resolve?current=", auth.AccessToken, nil, &resolve); err != nil {
@@ -154,6 +157,9 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 	}
 	switch strings.ToLower(strings.TrimSpace(status.Status)) {
 	case "succeeded":
+		if err := ensureExpectedTenant(in.ExpectedTenant, status.TenantID, "任务事件"); err != nil {
+			return err
+		}
 		var result jobResultResponse
 		if err := s.requestJSON(ctx, http.MethodGet, baseURL+"/v1/jobs/"+gen.JobID+"/result", auth.AccessToken, nil, &result); err != nil {
 			return fmt.Errorf("读取结果失败: %w", err)
@@ -169,6 +175,18 @@ func (s Service) DiagnoseExternal(ctx context.Context, in DiagnoseExternalInput)
 	default:
 		return fmt.Errorf("未知任务状态: %s", status.Status)
 	}
+}
+
+func ensureExpectedTenant(expectedTenant, actualTenant, stage string) error {
+	expectedTenant = strings.TrimSpace(expectedTenant)
+	if expectedTenant == "" {
+		return nil
+	}
+	actualTenant = strings.TrimSpace(actualTenant)
+	if actualTenant == expectedTenant {
+		return nil
+	}
+	return fmt.Errorf("%s tenant_id 不匹配: expected=%s actual=%s", stage, expectedTenant, actualTenant)
 }
 
 func (s Service) waitForJobTerminalStatus(

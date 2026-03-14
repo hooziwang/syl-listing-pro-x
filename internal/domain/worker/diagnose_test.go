@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -136,5 +137,115 @@ func TestDiagnoseExternal_IgnoresOptionalProviderFailure(t *testing.T) {
 		WithGenerate: false,
 	}); err != nil {
 		t.Fatalf("DiagnoseExternal() error = %v", err)
+	}
+}
+
+func TestDiagnoseExternal_RejectsUnexpectedTenant(t *testing.T) {
+	var baseURL string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/healthz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tenant_id":"system","ok":true,"llm":{"deepseek":{"ok":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/exchange":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tenant_id":"demo","access_token":"token-1"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/rules/resolve":
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"up_to_date":    true,
+				"rules_version": "rules-demo-1",
+				"download_url":  baseURL + "/download/rules-demo-1",
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/rules/refresh":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/download/rules-demo-1":
+			_, _ = w.Write([]byte("tarball"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+	baseURL = ts.URL
+
+	svc := Service{
+		HTTPClient: ts.Client(),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := svc.DiagnoseExternal(ctx, DiagnoseExternalInput{
+		BaseURL:        ts.URL,
+		SYLKey:         "key-123",
+		ExpectedTenant: "syl",
+		WithGenerate:   false,
+	})
+	if err == nil {
+		t.Fatal("DiagnoseExternal() expected tenant mismatch error")
+	}
+	for _, want := range []string{"tenant_id", "demo", "syl"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+}
+
+func TestDiagnoseExternal_RejectsUnexpectedTenantFromJobEvent(t *testing.T) {
+	var baseURL string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/healthz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tenant_id":"system","ok":true,"llm":{"deepseek":{"ok":true}}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/exchange":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tenant_id":"syl","access_token":"token-1"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/rules/resolve":
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"up_to_date":    true,
+				"rules_version": "rules-syl-1",
+				"download_url":  baseURL + "/download/rules-syl-1",
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/rules/refresh":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/download/rules-syl-1":
+			_, _ = w.Write([]byte("tarball"))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/generate":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"job_id":"job_1"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/jobs/job_1/events":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: status\n"))
+			_, _ = w.Write([]byte("data: {\"job_id\":\"job_1\",\"tenant_id\":\"demo\",\"status\":\"succeeded\",\"updated_at\":\"2026-03-12T00:00:01Z\"}\n\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+	baseURL = ts.URL
+
+	svc := Service{
+		HTTPClient: ts.Client(),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := svc.DiagnoseExternal(ctx, DiagnoseExternalInput{
+		BaseURL:        ts.URL,
+		SYLKey:         "key-123",
+		ExpectedTenant: "syl",
+		WithGenerate:   true,
+		Timeout:        2 * time.Second,
+	})
+	if err == nil {
+		t.Fatal("DiagnoseExternal() expected job event tenant mismatch error")
+	}
+	for _, want := range []string{"tenant_id", "demo", "syl"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
 	}
 }
