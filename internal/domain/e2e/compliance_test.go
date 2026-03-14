@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -137,13 +138,206 @@ func TestValidateListingCompliance(t *testing.T) {
 	})
 }
 
+func TestRepoRulesRootFromFileUsesGitWorkspaceInsteadOfCurrentCWD(t *testing.T) {
+	root := t.TempDir()
+	workspaceRoot := filepath.Join(root, "workspace")
+	repoRoot := filepath.Join(workspaceRoot, "syl-listing-pro-x")
+	rulesRoot := filepath.Join(workspaceRoot, "syl-listing-pro-rules")
+	mkdirAllForCompliancePathTest(t, filepath.Join(repoRoot, "internal", "domain", "e2e"))
+	mkdirAllForCompliancePathTest(t, rulesRoot)
+
+	runGitForCompliancePathTest(t, repoRoot, "init")
+	runGitForCompliancePathTest(t, repoRoot, "config", "user.email", "test@example.com")
+	runGitForCompliancePathTest(t, repoRoot, "config", "user.name", "tester")
+	writeFileForCompliancePathTest(t, filepath.Join(repoRoot, "README.md"), "repo\n")
+	runGitForCompliancePathTest(t, repoRoot, "add", "README.md")
+	runGitForCompliancePathTest(t, repoRoot, "commit", "-m", "init")
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	filePath := filepath.Join(repoRoot, "internal", "domain", "e2e", "compliance_test.go")
+	got := repoRulesRootFromFile(t, filePath)
+	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
+		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
+	}
+}
+
+func TestRepoRulesRootFromFileSupportsLinkedWorktree(t *testing.T) {
+	root := t.TempDir()
+	workspaceRoot := filepath.Join(root, "workspace")
+	repoRoot := filepath.Join(workspaceRoot, "syl-listing-pro-x")
+	rulesRoot := filepath.Join(workspaceRoot, "syl-listing-pro-rules")
+	mkdirAllForCompliancePathTest(t, filepath.Join(repoRoot, "internal", "domain", "e2e"))
+	mkdirAllForCompliancePathTest(t, rulesRoot)
+
+	runGitForCompliancePathTest(t, repoRoot, "init")
+	runGitForCompliancePathTest(t, repoRoot, "config", "user.email", "test@example.com")
+	runGitForCompliancePathTest(t, repoRoot, "config", "user.name", "tester")
+	writeFileForCompliancePathTest(t, filepath.Join(repoRoot, "README.md"), "repo\n")
+	runGitForCompliancePathTest(t, repoRoot, "add", "README.md")
+	runGitForCompliancePathTest(t, repoRoot, "commit", "-m", "init")
+
+	worktreePath := filepath.Join(root, "global-worktrees", "syl-listing-pro-x", "fix-rules-root")
+	runGitForCompliancePathTest(t, repoRoot, "worktree", "add", worktreePath, "-b", "fix-rules-root")
+	mkdirAllForCompliancePathTest(t, filepath.Join(worktreePath, "internal", "domain", "e2e"))
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	filePath := filepath.Join(worktreePath, "internal", "domain", "e2e", "compliance_test.go")
+	got := repoRulesRootFromFile(t, filePath)
+	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
+		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
+	}
+}
+
+func TestRepoRulesRootFromFileFallsBackToSiblingRepoNamesWithoutGit(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	filePath := filepath.Join(parent, "syl-listing-pro-x", "internal", "domain", "e2e", "compliance_test.go")
+	rulesRoot := filepath.Join(parent, "syl-listing-pro-rules")
+	mkdirAllForCompliancePathTest(t, filepath.Dir(filePath))
+	mkdirAllForCompliancePathTest(t, rulesRoot)
+
+	got := repoRulesRootFromFile(t, filePath)
+	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
+		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
+	}
+}
+
+func TestRepoRulesRootFromFileFallsBackToLegacyRulesDirWithoutGit(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "parent")
+	filePath := filepath.Join(parent, "syl-listing-pro-x", "internal", "domain", "e2e", "compliance_test.go")
+	rulesRoot := filepath.Join(parent, "rules")
+	mkdirAllForCompliancePathTest(t, filepath.Dir(filePath))
+	mkdirAllForCompliancePathTest(t, rulesRoot)
+
+	got := repoRulesRootFromFile(t, filePath)
+	if got, want := canonicalPathForCompliancePathTest(t, got), canonicalPathForCompliancePathTest(t, rulesRoot); got != want {
+		t.Fatalf("repoRulesRootFromFile()=%q want %q", got, rulesRoot)
+	}
+}
+
 func repoRulesRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", "rules"))
+	return repoRulesRootFromFile(t, file)
+}
+
+func repoRulesRootFromFile(t *testing.T, file string) string {
+	t.Helper()
+
+	if workspaceRoot, ok := repoWorkspaceRootFromFile(file); ok {
+		for _, name := range []string{"syl-listing-pro-rules", "rules"} {
+			candidate := filepath.Join(workspaceRoot, name)
+			if dirExistsForComplianceTest(candidate) {
+				return candidate
+			}
+		}
+	}
+
+	for _, name := range []string{"syl-listing-pro-rules", "rules"} {
+		candidate := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", "..", name))
+		if dirExistsForComplianceTest(candidate) {
+			return candidate
+		}
+	}
+	t.Fatal("未找到 rules 仓目录")
+	return ""
+}
+
+func repoWorkspaceRootFromFile(file string) (string, bool) {
+	startDir := filepath.Dir(file)
+	topLevel, ok := gitTrimmedOutputForComplianceTest(startDir, "rev-parse", "--show-toplevel")
+	if !ok {
+		return "", false
+	}
+	commonDir, ok := gitTrimmedOutputForComplianceTest(startDir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if !ok {
+		return "", false
+	}
+	if filepath.Base(commonDir) != ".git" {
+		return "", false
+	}
+	repoRoot := filepath.Dir(commonDir)
+	if filepath.Clean(topLevel) != filepath.Clean(repoRoot) {
+		return filepath.Dir(repoRoot), true
+	}
+	return filepath.Dir(topLevel), true
+}
+
+func gitTrimmedOutputForComplianceTest(dir string, args ...string) (string, bool) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	value := strings.TrimSpace(string(out))
+	if value == "" {
+		return "", false
+	}
+	return value, true
+}
+
+func dirExistsForComplianceTest(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func runGitForCompliancePathTest(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v, output=%s", args, err, string(out))
+	}
+	return string(out)
+}
+
+func mkdirAllForCompliancePathTest(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", path, err)
+	}
+}
+
+func writeFileForCompliancePathTest(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func canonicalPathForCompliancePathTest(t *testing.T, path string) string {
+	t.Helper()
+	clean := filepath.Clean(path)
+	resolved, err := filepath.EvalSymlinks(clean)
+	if err == nil {
+		return resolved
+	}
+	return clean
 }
 
 func writeListingMarkdownPair(t *testing.T, english string, chinese string) (string, string) {
@@ -307,7 +501,7 @@ func bulletText(prefix string) string {
 		heading += " Feature"
 	}
 	return heading + ": " + strings.TrimSpace(
-		"**paper lanterns** keep classroom displays bright and easy to refresh for lessons, parties, and welcome days. " +
+		"**paper lanterns** keep classroom displays bright and easy to refresh for lessons, parties, and welcome days. "+
 			"**hanging decor** adds cheerful color without tools, while **classroom decoration** supports bulletin boards, reading corners, ceiling displays, and reusable seasonal setups.",
 	)
 }
