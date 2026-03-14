@@ -13,8 +13,12 @@ import (
 )
 
 func (s Service) createWorkerArchive() (string, error) {
+	return s.createWorkerArchiveForServer(Server{})
+}
+
+func (s Service) createWorkerArchiveForServer(server Server) (string, error) {
 	repo := s.workerRepo()
-	cfg, err := s.loadWorkerConfig()
+	cfg, err := s.resolveWorkerConfig(server)
 	if err != nil {
 		return "", err
 	}
@@ -83,6 +87,20 @@ func (s Service) createWorkerArchive() (string, error) {
 		return "", err
 	}
 	return tmpPath, nil
+}
+
+func (s Service) resolveWorkerConfig(server Server) (workerConfig, error) {
+	cfg, err := s.loadWorkerConfig()
+	if err != nil {
+		return cfg, err
+	}
+	if domain := strings.TrimSpace(server.Domain); domain != "" {
+		cfg.Server.Domain = domain
+	}
+	if email := strings.TrimSpace(server.LetsencryptEmail); email != "" {
+		cfg.Server.LetsencryptEmail = email
+	}
+	return cfg, nil
 }
 
 func (s Service) loadWorkerConfig() (workerConfig, error) {

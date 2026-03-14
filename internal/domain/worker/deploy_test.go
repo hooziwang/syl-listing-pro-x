@@ -191,6 +191,36 @@ func TestDeployWaitHTTPSUsesHostResolvedDomain(t *testing.T) {
 	}
 }
 
+func TestDeployWaitHTTPSUsesServerSpecificDomain(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workerRepo, "worker.config.json"), []byte(`{"server":{"domain":"worker.aelus.tech"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := Service{WorkerRepo: workerRepo}
+	cmd := svc.buildRemoteDeployCommand(Server{
+		Name:   "syl-test-server",
+		Host:   "119.29.21.88",
+		User:   "ubuntu",
+		Port:   22,
+		Dir:    "/home/ubuntu/syl-listing-worker",
+		Domain: "worker.test.example",
+	}, "/tmp/archive.tar.gz", DeployInput{
+		Server:             "syl-test-server",
+		SkipBuild:          true,
+		SkipWaitHTTPS:      false,
+		HTTPSTimeout:       120,
+		HTTPSCheckInterval: 3,
+	}, `{"service":"syl-listing-worker","git_commit":"abc1234","build_time":"2026-03-11T04:00:00Z","deployed_at":"2026-03-11T04:05:00Z"}`)
+	if !strings.Contains(cmd, "/etc/letsencrypt/live/worker.test.example/fullchain.pem") {
+		t.Fatalf("deploy cmd missing server-specific domain: %s", cmd)
+	}
+}
+
 func TestBuildRuntimeVersionMetadataRequiresExactTag(t *testing.T) {
 	root := t.TempDir()
 	workerRepo := filepath.Join(root, "worker")
@@ -272,6 +302,30 @@ func TestDiagnoseCommandRequiresDeepseekHealthCheck(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "data.llm?.deepseek?.ok!==true") {
 		t.Fatalf("diagnose cmd should require deepseek health only: %s", cmd)
+	}
+}
+
+func TestDiagnoseUsesServerSpecificDomainForCertificateCheck(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	if err := os.MkdirAll(workerRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workerRepo, "worker.config.json"), []byte(`{"server":{"domain":"worker.aelus.tech"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := Service{WorkerRepo: workerRepo}
+	cmd := svc.buildRemoteDiagnoseCommand(Server{
+		Name:   "syl-test-server",
+		Host:   "119.29.21.88",
+		User:   "ubuntu",
+		Port:   22,
+		Dir:    "/home/ubuntu/syl-listing-worker",
+		Domain: "worker.test.example",
+	})
+	if !strings.Contains(cmd, "/etc/letsencrypt/live/worker.test.example/fullchain.pem") {
+		t.Fatalf("diagnose cmd missing server-specific domain: %s", cmd)
 	}
 }
 
