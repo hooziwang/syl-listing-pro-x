@@ -119,6 +119,15 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			},
 		},
 		{
+			name:  "worker-diagnose-external",
+			build: newWorkerDiagnoseExternalCmd,
+			parts: []string{
+				"必须显式传入 --base-url",
+				"/healthz",
+				"--with-generate",
+			},
+		},
+		{
 			name:  "e2e-run",
 			build: newE2ERunCmd,
 			parts: []string{

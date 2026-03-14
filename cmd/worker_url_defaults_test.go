@@ -222,12 +222,21 @@ func TestWorkerCheckRemoteVersionCmdMarksBaseURLAsRequired(t *testing.T) {
 	})
 }
 
-func TestWorkerDiagnoseExternalCmdUsesPathsWorkerURLDefault(t *testing.T) {
+func TestWorkerDiagnoseExternalCmdLeavesBaseURLDefaultEmpty(t *testing.T) {
 	withPathsForTest(t, func() {
 		paths.WorkerURL = "https://worker.from.paths"
 		cmd := newWorkerDiagnoseExternalCmd()
-		if got := cmd.Flag("base-url").DefValue; got != paths.WorkerURL {
-			t.Fatalf("base-url default = %q, want %q", got, paths.WorkerURL)
+		if got := cmd.Flag("base-url").DefValue; got != "" {
+			t.Fatalf("base-url default = %q, want empty", got)
+		}
+	})
+}
+
+func TestWorkerDiagnoseExternalCmdMarksBaseURLAsRequired(t *testing.T) {
+	withPathsForTest(t, func() {
+		cmd := newWorkerDiagnoseExternalCmd()
+		if _, ok := cmd.Flag("base-url").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
+			t.Fatalf("base-url flag should be marked required")
 		}
 	})
 }
