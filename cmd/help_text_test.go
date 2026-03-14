@@ -55,7 +55,7 @@ func TestWorkerHelpIncludesPrerequisites(t *testing.T) {
 	assertContainsAll(t, output,
 		"依赖 SSH",
 		"Docker Compose",
-		"默认服务器别名是 syl-server",
+		"必须显式传入 --server",
 	)
 }
 
@@ -103,6 +103,7 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			name:  "worker-deploy",
 			build: newWorkerDeployCmd,
 			parts: []string{
+				"必须显式传入 --server",
 				"会清理远端目录中除 data 和 .env 以外的内容",
 				"同步本地 worker/.env",
 				"部署完成后默认执行内部诊断",
