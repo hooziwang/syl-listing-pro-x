@@ -113,6 +113,7 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 			build: newWorkerCheckRemoteVersionCmd,
 			parts: []string{
 				"对比本地 worker git commit 与远端 /v1/admin/version",
+				"必须显式传入 --base-url",
 				"~/.syl-listing-pro-x/.env",
 				"远端 rules_versions",
 			},

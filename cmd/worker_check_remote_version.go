@@ -17,6 +17,7 @@ func newWorkerCheckRemoteVersionCmd() *cobra.Command {
 		Long: `对比本地 worker git commit 与远端 /v1/admin/version，确认远端是否已部署为本地最新版本。
 
 成功时会打印本地 commit、远端 commit、远端 build_time、deployed_at 和远端 rules_versions。
+必须显式传入 --base-url，避免误连默认环境。
 未传 --admin-token 时，会回退读取 ~/.syl-listing-pro-x/.env 中的 ADMIN_TOKEN。`,
 		Example: `  syl-listing-pro-x worker check-remote-version --base-url https://worker.example.test --admin-token <ADMIN_TOKEN>
   syl-listing-pro-x worker check-remote-version --base-url https://worker.example.test`,
@@ -58,7 +59,8 @@ func newWorkerCheckRemoteVersionCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&baseURL, "base-url", paths.WorkerURL, "worker 地址")
+	cmd.Flags().StringVar(&baseURL, "base-url", "", "worker 地址")
+	_ = cmd.MarkFlagRequired("base-url")
 	cmd.Flags().StringVar(&adminToken, "admin-token", "", "ADMIN_TOKEN，默认从 ~/.syl-listing-pro-x/.env 读取")
 	return cmd
 }

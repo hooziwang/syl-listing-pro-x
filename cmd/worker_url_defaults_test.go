@@ -203,12 +203,21 @@ func TestRulesPublishCmdDoesNotDefaultToBundledPrivateKey(t *testing.T) {
 	})
 }
 
-func TestWorkerCheckRemoteVersionCmdUsesPathsWorkerURLDefault(t *testing.T) {
+func TestWorkerCheckRemoteVersionCmdLeavesBaseURLDefaultEmpty(t *testing.T) {
 	withPathsForTest(t, func() {
 		paths.WorkerURL = "https://worker.from.paths"
 		cmd := newWorkerCheckRemoteVersionCmd()
-		if got := cmd.Flag("base-url").DefValue; got != paths.WorkerURL {
-			t.Fatalf("base-url default = %q, want %q", got, paths.WorkerURL)
+		if got := cmd.Flag("base-url").DefValue; got != "" {
+			t.Fatalf("base-url default = %q, want empty", got)
+		}
+	})
+}
+
+func TestWorkerCheckRemoteVersionCmdMarksBaseURLAsRequired(t *testing.T) {
+	withPathsForTest(t, func() {
+		cmd := newWorkerCheckRemoteVersionCmd()
+		if _, ok := cmd.Flag("base-url").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
+			t.Fatalf("base-url flag should be marked required")
 		}
 	})
 }
