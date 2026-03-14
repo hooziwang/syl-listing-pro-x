@@ -31,7 +31,7 @@ func (s Service) Logs(ctx context.Context, in LogsInput) error {
 }
 
 func (s Service) buildRemoteDiagnoseCommand(server Server) string {
-	cfg, err := s.loadWorkerConfig()
+	cfg, err := s.resolveWorkerConfig(server)
 	if err != nil {
 		return fmt.Sprintf("echo %q >&2; exit 1", err.Error())
 	}

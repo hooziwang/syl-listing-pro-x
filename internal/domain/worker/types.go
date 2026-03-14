@@ -7,11 +7,13 @@ import (
 )
 
 type Server struct {
-	Name string
-	Host string
-	User string
-	Port int
-	Dir  string
+	Name             string
+	Host             string
+	User             string
+	Port             int
+	Dir              string
+	Domain           string
+	LetsencryptEmail string
 }
 
 type Service struct {

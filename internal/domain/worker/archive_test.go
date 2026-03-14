@@ -135,6 +135,50 @@ func TestCreateWorkerArchiveClosesFilesDuringWalk(t *testing.T) {
 	defer os.Remove(archivePath)
 }
 
+func TestCreateWorkerArchiveUsesServerSpecificComposeEnv(t *testing.T) {
+	root := t.TempDir()
+	workerRepo := filepath.Join(root, "worker")
+	for _, dir := range []string{
+		filepath.Join(workerRepo, "docker"),
+		filepath.Join(workerRepo, "src"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, body := range map[string]string{
+		filepath.Join(workerRepo, "worker.config.json"):    `{"server":{"domain":"worker.aelus.tech","letsencrypt_email":"ops@example.com"}}`,
+		filepath.Join(workerRepo, "docker", "compose.yml"): "services:\n",
+		filepath.Join(workerRepo, "src", "index.js"):       "console.log('ok')\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	svc := Service{WorkerRepo: workerRepo}
+	archivePath, err := svc.createWorkerArchiveForServer(Server{
+		Name:             "syl-test-server",
+		Domain:           "worker.test.example",
+		LetsencryptEmail: "qa@example.com",
+	})
+	if err != nil {
+		t.Fatalf("createWorkerArchiveForServer() error = %v", err)
+	}
+	defer os.Remove(archivePath)
+
+	got := readArchiveEntries(t, archivePath)
+	content := string(got[".compose.env"])
+	for _, want := range []string{
+		"DOMAIN=worker.test.example",
+		"LETSENCRYPT_EMAIL=qa@example.com",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf(".compose.env content = %q, want contains %q", content, want)
+		}
+	}
+}
+
 func readArchiveEntries(t *testing.T, archivePath string) map[string][]byte {
 	t.Helper()
 

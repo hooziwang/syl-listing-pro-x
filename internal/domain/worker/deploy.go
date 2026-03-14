@@ -39,7 +39,7 @@ func (s Service) Deploy(ctx context.Context, in DeployInput) error {
 	if _, err := os.Stat(filepath.Join(repo, "worker.config.json")); err != nil {
 		return fmt.Errorf("缺少 worker.config.json")
 	}
-	tmpArchive, err := s.createWorkerArchive()
+	tmpArchive, err := s.createWorkerArchiveForServer(server)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (s Service) buildRemoteDeployCommand(server Server, remoteTmp string, in De
 	if interval <= 0 {
 		interval = 2
 	}
-	cfg, err := s.loadWorkerConfig()
+	cfg, err := s.resolveWorkerConfig(server)
 	if err != nil {
 		return fmt.Sprintf("echo %q >&2; exit 1", err.Error())
 	}
