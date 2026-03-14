@@ -22,10 +22,11 @@ type Service struct {
 }
 
 type DiagnoseExternalInput struct {
-	BaseURL      string
-	SYLKey       string
-	WithGenerate bool
-	Timeout      time.Duration
+	BaseURL        string
+	SYLKey         string
+	ExpectedTenant string
+	WithGenerate   bool
+	Timeout        time.Duration
 }
 
 type PushEnvInput struct {

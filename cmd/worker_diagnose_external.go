@@ -10,6 +10,7 @@ import (
 func newWorkerDiagnoseExternalCmd() *cobra.Command {
 	var baseURL string
 	var sylKey string
+	var expectedTenant string
 	var withGenerate bool
 	var timeout time.Duration
 	cmd := &cobra.Command{
@@ -25,15 +26,17 @@ func newWorkerDiagnoseExternalCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := worker.Service{}
 			return svc.DiagnoseExternal(cmd.Context(), worker.DiagnoseExternalInput{
-				BaseURL:      baseURL,
-				SYLKey:       sylKey,
-				WithGenerate: withGenerate,
-				Timeout:      timeout,
+				BaseURL:        baseURL,
+				SYLKey:         sylKey,
+				ExpectedTenant: expectedTenant,
+				WithGenerate:   withGenerate,
+				Timeout:        timeout,
 			})
 		},
 	}
 	cmd.Flags().StringVar(&baseURL, "base-url", paths.WorkerURL, "worker 对外地址")
 	cmd.Flags().StringVar(&sylKey, "key", "", "SYL_LISTING_KEY")
+	cmd.Flags().StringVar(&expectedTenant, "expected-tenant", "", "期望命中的租户 ID")
 	cmd.Flags().BoolVar(&withGenerate, "with-generate", false, "额外执行一次生成链路检查")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "生成事件流超时")
 	_ = cmd.MarkFlagRequired("key")
