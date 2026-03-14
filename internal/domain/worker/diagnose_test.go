@@ -21,6 +21,20 @@ func TestDefaultServers(t *testing.T) {
 	if srv.User != "ubuntu" {
 		t.Fatalf("user=%q", srv.User)
 	}
+
+	testSrv, ok := servers["syl-test-server"]
+	if !ok {
+		t.Fatal("missing syl-test-server")
+	}
+	if testSrv.Host != "119.29.21.88" {
+		t.Fatalf("test host=%q", testSrv.Host)
+	}
+	if testSrv.User != "ubuntu" {
+		t.Fatalf("test user=%q", testSrv.User)
+	}
+	if testSrv.Dir != "/home/ubuntu/syl-listing-worker" {
+		t.Fatalf("test dir=%q", testSrv.Dir)
+	}
 }
 
 func TestDiagnoseExternal(t *testing.T) {

@@ -238,10 +238,20 @@ syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
 
 ```text
 name: syl-server
-host: 43.135.112.167
+host: 159.75.124.28
 user: ubuntu
 port: 22
-dir: /opt/syl-listing-worker
+dir: /home/ubuntu/syl-listing-worker
+```
+
+内置测试服务器别名：
+
+```text
+name: syl-test-server
+host: 119.29.21.88
+user: ubuntu
+port: 22
+dir: /home/ubuntu/syl-listing-worker
 ```
 
 远端执行依赖本机已有：

@@ -139,5 +139,12 @@ func DefaultServers() map[string]Server {
 			Port: 22,
 			Dir:  "/home/ubuntu/syl-listing-worker",
 		},
+		"syl-test-server": {
+			Name: "syl-test-server",
+			Host: "119.29.21.88",
+			User: "ubuntu",
+			Port: 22,
+			Dir:  "/home/ubuntu/syl-listing-worker",
+		},
 	}
 }
