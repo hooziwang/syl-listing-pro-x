@@ -111,7 +111,7 @@ syl-listing-pro-x e2e ...
 ```bash
 syl-listing-pro-x rules validate --tenant syl
 syl-listing-pro-x rules package --tenant syl
-syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
+syl-listing-pro-x rules publish --tenant syl
 ```
 
 ### worker 子命令
@@ -201,7 +201,7 @@ rules/dist/<tenant>/<version>/
 2. `SYL_LISTING_RULES_PRIVATE_KEY`
 3. `SIGNING_PRIVATE_KEY_PEM`
 4. `SIGNING_PRIVATE_KEY_BASE64`
-5. 显式开启本地开发模式后，才允许使用仓库内 `rules/keys/rules_private.pem`
+5. 本地命令行未显式配置时，自动回退到仓库内 `rules/keys/rules_private.pem`，并临时开启开发模式
 
 开发模式开关：
 
@@ -218,7 +218,7 @@ SYL_LISTING_ALLOW_DEV_PRIVATE_KEY=1
 ### `rules publish`
 
 ```bash
-syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
+syl-listing-pro-x rules publish --tenant syl
 ```
 
 它不是直接上传规则源码，而是：
@@ -232,6 +232,11 @@ syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
 
 默认超时是 2 分钟。  
 返回成功后，CLI 会输出最终发布的 `rules_version`。
+
+本地默认解析：
+
+- `ADMIN_TOKEN` 默认从 `~/.syl-listing-pro-x/.env` 读取
+- 如果没有显式传 `--private-key`，且也没配置规则私钥环境变量，会自动回退到 `rules/keys/rules_private.pem`
 
 ## worker：正式发布工具
 
@@ -462,7 +467,7 @@ cd /Users/wxy/syl-listing-pro/syl-listing-pro-x
 make
 bin/syl-listing-pro-x rules validate --tenant syl
 bin/syl-listing-pro-x rules package --tenant syl
-bin/syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
+bin/syl-listing-pro-x rules publish --tenant syl
 ```
 
 ### worker 改动后

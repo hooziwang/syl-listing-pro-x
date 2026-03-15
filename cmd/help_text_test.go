@@ -106,22 +106,23 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 				"stdout 只输出已生效的 rules_version",
 				"传 --print-path-context 时，stderr 打印本次解析到的路径上下文",
 				"/v1/admin/tenant-rules/publish",
-				"--admin-token",
+				"默认从 ~/.syl-listing-pro-x/.env 读取 ADMIN_TOKEN",
+				"自动回退到 rules 仓库内开发私钥",
 			},
+		},
+		{
+			name:  "worker-release",
+			build: newWorkerReleaseCmd,
+			parts: []string{
+				"唯一正式发布入口",
+				"先校验本地 worker 仓工作区干净并执行 npm test",
+				"再创建并推送版本 tag",
+				"必须显式传入 --server",
+				"必须显式传入 --version",
+				"只允许从 tag 对应代码发布",
 			},
-			{
-				name:  "worker-release",
-				build: newWorkerReleaseCmd,
-				parts: []string{
-					"唯一正式发布入口",
-					"先校验本地 worker 仓工作区干净并执行 npm test",
-					"再创建并推送版本 tag",
-					"必须显式传入 --server",
-					"必须显式传入 --version",
-					"只允许从 tag 对应代码发布",
-				},
-			},
-			{
+		},
+		{
 			name:  "e2e-run",
 			build: newE2ERunCmd,
 			parts: []string{

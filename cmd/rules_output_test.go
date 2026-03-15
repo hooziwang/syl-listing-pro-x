@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestRulesPackageCmdKeepsStderrQuietByDefault(t *testing.T) {
@@ -178,6 +180,125 @@ func TestRulesPublishCmdPrintsPathContextWhenRequested(t *testing.T) {
 			if !strings.Contains(stderr.String(), part) {
 				t.Fatalf("stderr missing %q\nstderr:\n%s", part, stderr.String())
 			}
+		}
+	})
+}
+
+func TestRulesPublishCmdUsesUserEnvAdminTokenAndRepoDefaultPrivateKey(t *testing.T) {
+	withPathsForTest(t, func() {
+		root := t.TempDir()
+		writeTenantFixtureForRulesCmdTest(t, root, "demo")
+		mkdirAllForRulesCmdTest(t, filepath.Join(root, "keys"))
+		_ = generatePrivateKeyForRulesCmdTest(t, filepath.Join(root, "keys"))
+		paths.WorkspaceRoot = "/tmp/workspace"
+		paths.RulesRepo = root
+
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		if err := os.MkdirAll(filepath.Join(homeDir, ".syl-listing-pro-x"), 0o755); err != nil {
+			t.Fatalf("MkdirAll admin env dir error = %v", err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(homeDir, ".syl-listing-pro-x", ".env"),
+			[]byte("ADMIN_TOKEN=admin-from-home-env\n"),
+			0o644,
+		); err != nil {
+			t.Fatalf("WriteFile admin env error = %v", err)
+		}
+		t.Setenv("SYL_LISTING_ALLOW_DEV_PRIVATE_KEY", "")
+
+		var gotAuth string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"rules_version":"rules-demo-20260314-000000-abcd12"}`))
+		}))
+		defer server.Close()
+
+		cmd := newRulesPublishCmd()
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+		cmd.SetArgs([]string{
+			"--tenant", "demo",
+			"--version", "rules-demo-20260314-000000-abcd12",
+			"--worker", server.URL,
+		})
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+
+		if got := stdout.String(); got != "rules-demo-20260314-000000-abcd12\n" {
+			t.Fatalf("stdout = %q", got)
+		}
+		if got := stderr.String(); got != "" {
+			t.Fatalf("stderr = %q, want empty", got)
+		}
+		if gotAuth != "Bearer admin-from-home-env" {
+			t.Fatalf("Authorization = %q", gotAuth)
+		}
+	})
+}
+
+func TestRulesPublishCmdLoadsAdminTokenDefaultFromUserEnv(t *testing.T) {
+	withPathsForTest(t, func() {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		if err := os.MkdirAll(filepath.Join(homeDir, ".syl-listing-pro-x"), 0o755); err != nil {
+			t.Fatalf("MkdirAll admin env dir error = %v", err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(homeDir, ".syl-listing-pro-x", ".env"),
+			[]byte("ADMIN_TOKEN=admin-from-home-env\n"),
+			0o644,
+		); err != nil {
+			t.Fatalf("WriteFile admin env error = %v", err)
+		}
+
+		cmd := newRulesPublishCmd()
+		if got := cmd.Flag("admin-token").DefValue; got != "admin-from-home-env" {
+			t.Fatalf("admin-token default = %q, want %q", got, "admin-from-home-env")
+		}
+	})
+}
+
+func TestRulesPublishCmdLeavesAdminTokenDefaultEmptyWithoutUserEnv(t *testing.T) {
+	withPathsForTest(t, func() {
+		t.Setenv("HOME", t.TempDir())
+
+		cmd := newRulesPublishCmd()
+		if got := cmd.Flag("admin-token").DefValue; got != "" {
+			t.Fatalf("admin-token default = %q, want empty", got)
+		}
+	})
+}
+
+func TestRulesPublishCmdDoesNotMarkEnvBackedAdminTokenAsRequired(t *testing.T) {
+	withPathsForTest(t, func() {
+		cmd := newRulesPublishCmd()
+		if _, ok := cmd.Flag("admin-token").Annotations[cobra.BashCompOneRequiredFlag]; ok {
+			t.Fatalf("admin-token flag should not be marked required when env fallback exists")
+		}
+	})
+}
+
+func TestResolveRulesPublishPrivateKeyUsesRepoDefaultAndEnablesDevMode(t *testing.T) {
+	withPathsForTest(t, func() {
+		paths.RulesRepo = "/tmp/rules-repo"
+		t.Setenv("SYL_LISTING_ALLOW_DEV_PRIVATE_KEY", "")
+
+		privateKey, restore := resolveRulesPublishPrivateKey("")
+		defer restore()
+
+		want := filepath.Join(paths.RulesRepo, "keys", "rules_private.pem")
+		if privateKey != want {
+			t.Fatalf("private key = %q, want %q", privateKey, want)
+		}
+		if got := os.Getenv("SYL_LISTING_ALLOW_DEV_PRIVATE_KEY"); got != "1" {
+			t.Fatalf("allow dev env = %q, want 1", got)
 		}
 	})
 }
