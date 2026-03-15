@@ -36,7 +36,7 @@ func TestRootHelpIncludesOperationalGuidance(t *testing.T) {
 		"工程侧工具集合",
 		"面向开发、运维、发版和工程验收",
 		"rules：校验、打包、发布租户规则",
-		"worker：部署、诊断、日志与远端版本核对",
+		"worker：唯一正式发布入口",
 		"e2e：真实 worker 和真实 CLI 的发布验收",
 	)
 }
@@ -53,10 +53,20 @@ func TestRulesHelpIncludesWorkflowContext(t *testing.T) {
 func TestWorkerHelpIncludesPrerequisites(t *testing.T) {
 	output := renderHelp(t, newWorkerCmd)
 	assertContainsAll(t, output,
-		"依赖 SSH",
-		"Docker Compose",
+		"正式发布入口",
+		"发布入口",
 		"必须显式传入 --server",
 	)
+}
+
+func TestWorkerHelpOnlyExposesReleaseSubcommand(t *testing.T) {
+	output := renderHelp(t, newWorkerCmd)
+	assertContainsAll(t, output, "release")
+	for _, forbidden := range []string{"deploy", "push-env", "diagnose", "check-remote-version", "logs"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("worker help should not expose %q\noutput:\n%s", forbidden, output)
+		}
+	}
 }
 
 func TestE2EHelpIncludesExecutionContext(t *testing.T) {
@@ -98,37 +108,20 @@ func TestLeafCommandHelpExplainsBehavior(t *testing.T) {
 				"/v1/admin/tenant-rules/publish",
 				"--admin-token",
 			},
-		},
-		{
-			name:  "worker-deploy",
-			build: newWorkerDeployCmd,
-			parts: []string{
-				"必须显式传入 --server",
-				"会清理远端目录中除 data 和 .env 以外的内容",
-				"同步本地 worker/.env",
-				"部署完成后默认执行内部诊断",
 			},
-		},
-		{
-			name:  "worker-check-remote-version",
-			build: newWorkerCheckRemoteVersionCmd,
-			parts: []string{
-				"对比本地 worker git commit 与远端 /v1/admin/version",
-				"必须显式传入 --base-url",
-				"~/.syl-listing-pro-x/.env",
-				"远端 rules_versions",
+			{
+				name:  "worker-release",
+				build: newWorkerReleaseCmd,
+				parts: []string{
+					"唯一正式发布入口",
+					"先校验本地 worker 仓工作区干净并执行 npm test",
+					"再创建并推送版本 tag",
+					"必须显式传入 --server",
+					"必须显式传入 --version",
+					"只允许从 tag 对应代码发布",
+				},
 			},
-		},
-		{
-			name:  "worker-diagnose-external",
-			build: newWorkerDiagnoseExternalCmd,
-			parts: []string{
-				"必须显式传入 --base-url",
-				"/healthz",
-				"--with-generate",
-			},
-		},
-		{
+			{
 			name:  "e2e-run",
 			build: newE2ERunCmd,
 			parts: []string{

@@ -203,91 +203,38 @@ func TestRulesPublishCmdDoesNotDefaultToBundledPrivateKey(t *testing.T) {
 	})
 }
 
-func TestWorkerCheckRemoteVersionCmdLeavesBaseURLDefaultEmpty(t *testing.T) {
+func TestWorkerReleaseCmdLeavesServerDefaultEmpty(t *testing.T) {
 	withPathsForTest(t, func() {
-		paths.WorkerURL = "https://worker.from.paths"
-		cmd := newWorkerCheckRemoteVersionCmd()
-		if got := cmd.Flag("base-url").DefValue; got != "" {
-			t.Fatalf("base-url default = %q, want empty", got)
+		cmd := newWorkerReleaseCmd()
+		if got := cmd.Flag("server").DefValue; got != "" {
+			t.Fatalf("server default = %q, want empty", got)
 		}
 	})
 }
 
-func TestWorkerCheckRemoteVersionCmdMarksBaseURLAsRequired(t *testing.T) {
+func TestWorkerReleaseCmdMarksServerAsRequired(t *testing.T) {
 	withPathsForTest(t, func() {
-		cmd := newWorkerCheckRemoteVersionCmd()
-		if _, ok := cmd.Flag("base-url").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
-			t.Fatalf("base-url flag should be marked required")
+		cmd := newWorkerReleaseCmd()
+		if _, ok := cmd.Flag("server").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
+			t.Fatalf("server flag should be marked required")
 		}
 	})
 }
 
-func TestWorkerDiagnoseExternalCmdLeavesBaseURLDefaultEmpty(t *testing.T) {
+func TestWorkerReleaseCmdLeavesVersionDefaultEmpty(t *testing.T) {
 	withPathsForTest(t, func() {
-		paths.WorkerURL = "https://worker.from.paths"
-		cmd := newWorkerDiagnoseExternalCmd()
-		if got := cmd.Flag("base-url").DefValue; got != "" {
-			t.Fatalf("base-url default = %q, want empty", got)
+		cmd := newWorkerReleaseCmd()
+		if got := cmd.Flag("version").DefValue; got != "" {
+			t.Fatalf("version default = %q, want empty", got)
 		}
 	})
 }
 
-func TestWorkerDiagnoseExternalCmdMarksBaseURLAsRequired(t *testing.T) {
+func TestWorkerReleaseCmdMarksVersionAsRequired(t *testing.T) {
 	withPathsForTest(t, func() {
-		cmd := newWorkerDiagnoseExternalCmd()
-		if _, ok := cmd.Flag("base-url").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
-			t.Fatalf("base-url flag should be marked required")
-		}
-	})
-}
-
-func TestWorkerSSHCommandsLeaveServerDefaultEmpty(t *testing.T) {
-	cases := []struct {
-		name  string
-		build func() *cobra.Command
-	}{
-		{name: "deploy", build: newWorkerDeployCmd},
-		{name: "push-env", build: newWorkerPushEnvCmd},
-		{name: "logs", build: newWorkerLogsCmd},
-		{name: "diagnose", build: newWorkerDiagnoseCmd},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cmd := tc.build()
-			if got := cmd.Flag("server").DefValue; got != "" {
-				t.Fatalf("server default = %q, want empty", got)
-			}
-		})
-	}
-}
-
-func TestWorkerSSHCommandsMarkServerAsRequired(t *testing.T) {
-	cases := []struct {
-		name  string
-		build func() *cobra.Command
-	}{
-		{name: "deploy", build: newWorkerDeployCmd},
-		{name: "push-env", build: newWorkerPushEnvCmd},
-		{name: "logs", build: newWorkerLogsCmd},
-		{name: "diagnose", build: newWorkerDiagnoseCmd},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cmd := tc.build()
-			if _, ok := cmd.Flag("server").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
-				t.Fatalf("server flag should be marked required")
-			}
-		})
-	}
-}
-
-func TestWorkerDiagnoseExternalCmdLeavesExpectedTenantEmptyByDefault(t *testing.T) {
-	withPathsForTest(t, func() {
-		cmd := newWorkerDiagnoseExternalCmd()
-		if got := cmd.Flag("expected-tenant").DefValue; got != "" {
-			t.Fatalf("expected-tenant default = %q, want empty", got)
+		cmd := newWorkerReleaseCmd()
+		if _, ok := cmd.Flag("version").Annotations[cobra.BashCompOneRequiredFlag]; !ok {
+			t.Fatalf("version flag should be marked required")
 		}
 	})
 }

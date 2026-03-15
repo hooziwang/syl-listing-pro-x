@@ -5,7 +5,7 @@
 它把 3 类原本分散在不同仓库、不同阶段的动作收拢到一个 Go CLI 里：
 
 - `rules`：校验、签名、打包、发布租户规则
-- `worker`：远端部署、诊断、日志、版本核对
+- `worker`：唯一正式发布入口
 - `e2e`：发版前真实调用规则发布、worker 接口和终端 CLI 的端到端验收
 
 这不是用户侧生成 CLI。  
@@ -25,8 +25,8 @@
 1. 从 `rules` 仓读取租户规则源码并做结构校验。
 2. 生成带签名的规则包与 `manifest.json`。
 3. 调用 worker 管理接口发布规则。
-4. 将 `worker` 仓打包上传到远端机器并完成部署。
-5. 对远端 worker 做内部诊断、外部诊断和日志查看。
+4. 按版本 tag 发布 `worker` 到远端机器。
+5. 通过 e2e 验证真实 worker 与真实 CLI 的完整链路。
 6. 触发真实 `syl-listing-pro` CLI 生成，验证完整发布链路。
 
 从代码结构看，它是一个典型的三层组织：
@@ -44,7 +44,7 @@ syl-listing-pro-x/
 ├── internal/domain/
 │   ├── e2e/                # release-gate / architecture-gate
 │   ├── rules/              # 规则校验、打包、签名、发布
-│   └── worker/             # 部署、日志、诊断、版本核对
+│   └── worker/             # release 发布流与远端版本核对
 ├── artifacts/              # e2e 验收产物目录
 ├── bin/                    # 编译产物
 └── main.go
@@ -117,12 +117,7 @@ syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
 ### worker 子命令
 
 ```bash
-syl-listing-pro-x worker deploy --server syl-server
-syl-listing-pro-x worker push-env --server syl-server
-syl-listing-pro-x worker diagnose --server syl-server
-syl-listing-pro-x worker diagnose-external --key <SYL_LISTING_KEY>
-syl-listing-pro-x worker check-remote-version
-syl-listing-pro-x worker logs --server syl-server --service worker-api --tail 50 --since 10m
+syl-listing-pro-x worker release --server syl-server --version v0.1.3
 ```
 
 ### e2e 子命令
@@ -238,9 +233,9 @@ syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
 默认超时是 2 分钟。  
 返回成功后，CLI 会输出最终发布的 `rules_version`。
 
-## worker：远端运维工具
+## worker：正式发布工具
 
-`worker` 领域代码位于 `internal/domain/worker`，它把 `worker` 仓和远端机器连起来。
+`worker` 领域代码位于 `internal/domain/worker`，现在只保留一个正式入口：`worker release`。
 
 默认服务器定义：
 
@@ -252,49 +247,41 @@ port: 22
 dir: /opt/syl-listing-worker
 ```
 
-远端执行依赖本机已有：
+远端执行仍依赖本机已有：
 
 - `ssh`
 - `scp`
 - 访问目标机器的权限
 
-### `worker deploy`
+### `worker release`
 
 ```bash
-syl-listing-pro-x worker deploy --server syl-server
+syl-listing-pro-x worker release --server syl-server --version v0.1.3
 ```
 
-必须显式传入 `--server`，不会再回退到某个默认服务器。
+这是唯一允许的正式发布路径，必须显式传入 `--server` 和 `--version`。
 
-部署流程来自 `internal/domain/worker/deploy.go`：
+固定流程：
 
-1. 读取 `worker.config.json`
-2. 将 `worker` 仓打成临时 tar.gz
-3. 清理远端目录中除 `data/` 和 `.env` 之外的内容
-4. 上传归档到远端 `/tmp/...tar.gz`
-5. 如果本地 `worker/.env` 存在，则同步到远端
-6. 写入 `data/runtime/version.json`
-7. 通过 `docker compose --env-file .compose.env up -d [--build]` 启动
-8. 可选等待 HTTPS 证书就绪
-9. 默认部署完成后继续执行内部诊断
+1. 校验本地 `worker` 仓工作区干净。
+2. 执行 `npm test`。
+3. 校验本地与远端都不存在同名版本 tag。
+4. 在当前 `HEAD` 创建并推送 tag。
+5. 从该 tag 创建临时干净 worktree。
+6. 用这个 tag 对应代码打包、上传、部署远端 worker。
+7. 写入远端 `data/runtime/version.json`，其中 `worker_version` 等于该 tag。
+8. 调用远端 `/v1/admin/version`，确认远端 `git_commit` 与本地 tag 对应提交一致。
 
-会自动打进归档的内容：
+这个约束非常重要：  
+发布包与线上 `worker_version` 必须来自同一个 tag，禁止再从当前工作区直接部署。
 
-- `worker` 仓绝大多数源码和部署文件
-- 自动生成的 `.compose.env`
+归档内容和远端部署细节仍由 `internal/domain/worker/deploy.go` 负责：
 
-不会打进归档的内容：
-
-- `.git`
-- `node_modules`
-- `dist`
-- `.env`
-- `data`
-
-`.compose.env` 由 `worker.config.json` 生成，当前包含：
-
-- `DOMAIN`
-- `LETSENCRYPT_EMAIL`
+- 会打入绝大多数 `worker` 源码和部署文件
+- 不会打入 `.git`、`node_modules`、`dist`、`.env`、`data`
+- 会自动生成 `.compose.env`
+- 如果本地 `worker/.env` 存在，会同步到远端
+- 默认部署完成后会继续执行内部诊断
 
 常用参数：
 
@@ -305,131 +292,6 @@ syl-listing-pro-x worker deploy --server syl-server
 - `--https-timeout`：等待超时秒数，默认 `240`
 - `--https-interval`：HTTPS 就绪检查间隔秒数，默认 `2`
 - `--skip-diagnose`：部署后不跑内部诊断
-
-### `worker push-env`
-
-```bash
-syl-listing-pro-x worker push-env --server syl-server
-```
-
-必须显式传入 `--server`。
-
-用途很单纯：
-
-1. 从本地 `worker/.env` 读取环境变量
-2. 上传到远端 `/tmp/syl-listing-worker.env.tmp`
-3. 覆盖远端 `${server.Dir}/.env`
-4. 仅重启 `worker-api` 和 `worker-runner`
-
-这个命令不会重传代码，适合只改密钥或配置。
-
-### `worker diagnose`
-
-```bash
-syl-listing-pro-x worker diagnose --server syl-server
-```
-
-必须显式传入 `--server`。
-
-这是“远端内部诊断”，通过 SSH 到服务器上执行检查脚本。  
-它当前会验证：
-
-- `redis`、`worker-api`、`worker-runner`、`nginx`、`certbot` 都在运行
-- `worker-api` 容器内 `http://127.0.0.1:8080/healthz` 正常
-- healthz 对 optional provider 采取 required-aware 判断
-- `.env` 里能解析出 `SYL_LISTING_KEYS`
-- 能完成 `/v1/auth/exchange`
-- 能完成 `/v1/rules/resolve`
-- Redis `PING` 返回 `PONG`
-- `nginx -t` 通过
-- Let’s Encrypt 证书文件存在或至少路径可检查
-
-底层执行统一使用 compose fallback：
-
-```text
-先尝试 docker compose --env-file .compose.env ...
-失败后再尝试 sudo -n docker compose --env-file .compose.env ...
-```
-
-### `worker diagnose-external`
-
-```bash
-syl-listing-pro-x worker diagnose-external --base-url https://worker.aelus.tech --key <SYL_LISTING_KEY>
-```
-
-必须显式传入 `--base-url`，不会再回退到默认 worker 地址。
-
-这是“外部黑盒诊断”，直接打公网接口，不走 SSH。  
-它按顺序检查：
-
-1. `GET /healthz`
-2. `POST /v1/auth/exchange`
-3. `GET /v1/rules/resolve?current=`
-4. `POST /v1/rules/refresh`
-5. 下载 `download_url`
-
-如果带上 `--with-generate`，还会额外：
-
-6. `POST /v1/generate`
-7. 订阅 `GET /v1/jobs/:jobId/events`
-8. 读取 `GET /v1/jobs/:jobId/result`
-9. 确认 `en_markdown` 和 `cn_markdown` 都非空
-
-常用参数：
-
-- `--key`：必填
-- `--base-url`：必填，明确指定 worker 对外地址
-- `--with-generate`：额外验证真实生成链路
-- `--timeout`：生成事件流超时，默认 `5m`
-
-### `worker check-remote-version`
-
-```bash
-syl-listing-pro-x worker check-remote-version --base-url https://worker.aelus.tech
-```
-
-必须显式传入 `--base-url`，不会再回退到默认 worker 地址。
-
-它会：
-
-1. 读取本地 `worker` 仓 `git rev-parse --short HEAD`
-2. 调用 `GET /v1/admin/version`
-3. 对比远端 `git_commit`
-4. 输出远端的 `build_time`、`deployed_at`、`rules_versions`
-
-如果没有传 `--admin-token`，会回退读取：
-
-```text
-~/.syl-listing-pro-x/.env
-```
-
-要求其中存在：
-
-```bash
-ADMIN_TOKEN=...
-```
-
-只要远端 commit 与本地 commit 不一致，命令就会返回错误。
-
-### `worker logs`
-
-```bash
-syl-listing-pro-x worker logs --server syl-server
-syl-listing-pro-x worker logs --server syl-server --service worker-api
-syl-listing-pro-x worker logs --server syl-server --service worker-api --service nginx --tail 50 --since 10m
-syl-listing-pro-x worker logs --server syl-server --no-follow
-```
-
-必须显式传入 `--server`。
-
-这是远端实时日志透传，底层会走 `ssh` + `docker compose logs`。
-
-参数语义：
-
-- `--service`：可重复传多个容器名
-- `--tail`：默认 `200`
-- `--since`：支持 `10m`、`1h`、RFC3339 时间
-- `--no-follow`：只拉一次，不持续跟随
 
 ## e2e：真实端到端验收
 
@@ -466,7 +328,7 @@ syl-listing-pro-x e2e run \
 
 1. 创建 artifact 目录
 2. 调用 `rules publish`
-3. 调用 `worker diagnose-external`
+3. 执行内置的 worker 外部黑盒诊断
 4. 查找系统中的 `syl-listing-pro`
 5. 执行真实 CLI（始终带 `--verbose`）：
    `syl-listing-pro <input> -o <out> --verbose --log-file <artifact>/cli.verbose.ndjson`
@@ -492,7 +354,7 @@ syl-listing-pro-x e2e single \
 1. 创建 artifact 目录
 2. 如果未传 `--out`，自动推导到 `syl-listing-pro-x/out/<artifacts-id>`
 3. 调用 `rules publish`
-4. 调用 `worker diagnose-external`
+4. 执行内置的 worker 外部黑盒诊断
 5. 查找系统中的 `syl-listing-pro`
 6. 执行真实 CLI（始终带 `--verbose`）
 7. 检查前台 verbose 日志是否出现非预期错误信号
@@ -555,7 +417,7 @@ architecture-summary.json
 它会对每个样例依次执行：
 
 1. 发布当前租户规则
-2. 运行 `worker diagnose-external`
+2. 运行内置的 worker 外部黑盒诊断
 3. 真实执行 `syl-listing-pro --verbose`
 4. 检查 `cli.stderr.log` 是否为空
 5. 逐行解析 `cli.verbose.ndjson`
@@ -606,14 +468,9 @@ bin/syl-listing-pro-x rules publish --tenant syl --admin-token <ADMIN_TOKEN>
 ### worker 改动后
 
 ```bash
-cd /Users/wxy/syl-listing-pro/worker
-make test
-make build
-
 cd /Users/wxy/syl-listing-pro/syl-listing-pro-x
-bin/syl-listing-pro-x worker deploy --server syl-server
-bin/syl-listing-pro-x worker diagnose --server syl-server
-bin/syl-listing-pro-x worker check-remote-version
+make
+bin/syl-listing-pro-x worker release --server syl-server --version v0.1.3
 ```
 
 ### 发版前完整验收
@@ -655,12 +512,10 @@ bin/syl-listing-pro-x e2e run \
 
 - `rules publish` 成功的前提是对应版本的 `manifest.json` 和 `rules.tar.gz` 已经存在且内容一致。
 - `rules package` 依赖本机有可用的 `openssl`。
-- `worker deploy` / `push-env` / `diagnose` / `logs` 都依赖本机有 `ssh`、`scp`。
-- `worker deploy` / `push-env` / `diagnose` / `logs` 都必须显式传入 `--server`，不会回退到默认远端。
-- `worker deploy` 会保留远端 `data/` 和 `.env`，其余目录会被清空后再同步。
-- `worker diagnose-external` 必须显式传入 `--base-url`，避免误连默认环境。
-- `worker check-remote-version` 会把本地 `worker` 仓 HEAD 与远端 `/v1/admin/version` 对比，不是比较 `syl-listing-pro-x` 自己的 commit。
-- `worker check-remote-version` 必须显式传入 `--base-url`，避免误连默认环境。
+- `worker release` 依赖本机有 `ssh`、`scp`、`git`、`npm`。
+- `worker release` 必须显式传入 `--server` 和 `--version`。
+- `worker release` 会先检查本地 `worker` 工作区是否干净；有未提交改动时会直接失败。
+- `worker release` 会从 tag 对应代码部署，不会再直接发布当前工作区。
 - `e2e run` / `e2e single` 都依赖系统 PATH 中存在可执行的 `syl-listing-pro`，否则会在 `exec.LookPath("syl-listing-pro")` 时报错。
 - `release-gate` / `architecture-gate` 只会收集输出目录根层级的 `.md` / `.docx` 文件，不会递归子目录。
 - `listing-compliance-gate` 会为 `testdata/e2e` 下的每个输入样例创建独立输出子目录。
@@ -677,8 +532,9 @@ bin/syl-listing-pro-x e2e run \
 - `internal/domain/rules/validate.go`
 - `internal/domain/rules/package.go`
 - `internal/domain/rules/publish.go`
+- `cmd/worker_release.go`
+- `internal/domain/worker/release.go`
 - `internal/domain/worker/deploy.go`
-- `internal/domain/worker/diagnose.go`
 - `internal/domain/worker/version.go`
 - `internal/domain/e2e/service.go`
 

@@ -54,6 +54,20 @@ type DeployInput struct {
 	SkipDiagnose       bool
 }
 
+type ReleaseInput struct {
+	Server             string
+	Version            string
+	AdminToken         string
+	BaseURL            string
+	SkipBuild          bool
+	StopLegacy         bool
+	InstallDocker      bool
+	SkipWaitHTTPS      bool
+	HTTPSTimeout       int
+	HTTPSCheckInterval int
+	SkipDiagnose       bool
+}
+
 type CheckRemoteVersionInput struct {
 	BaseURL    string
 	AdminToken string

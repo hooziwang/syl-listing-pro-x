@@ -5,21 +5,20 @@ import "github.com/spf13/cobra"
 func newWorkerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "worker",
-		Short: "worker 运维工具",
-		Long: `worker 子命令直接操作 worker/ 仓库或远端 worker 服务，适合部署、诊断、日志排障和版本核对。
+		Short: "worker 正式发布入口",
+		Long: `worker 子命令只保留正式发布入口。
 
-这一组命令依赖 SSH 和远端 Docker Compose 环境。涉及远端机器的命令必须显式传入 --server。
-其中 deploy / push-env / diagnose / logs 会访问远端机器，check-remote-version / diagnose-external 会访问 worker HTTP 接口。`,
-		Example: `  syl-listing-pro-x worker deploy --server syl-server
-  syl-listing-pro-x worker diagnose-external --base-url https://worker.example.test --key <SYL_LISTING_KEY>
-  syl-listing-pro-x worker check-remote-version --base-url https://worker.example.test --admin-token <ADMIN_TOKEN>`,
+发布流程统一走 worker release：
+1. 校验本地 worker 仓工作区干净。
+2. 执行 npm test。
+3. 创建并推送版本 tag。
+4. 从 tag 对应代码部署远端 worker。
+5. 核对远端运行版本。
+
+正式发布时必须显式传入 --server 和 --version。`,
+		Example: `  syl-listing-pro-x worker release --server syl-server --version v0.1.3`,
 	}
 	cmd.CompletionOptions.HiddenDefaultCmd = true
-	cmd.AddCommand(newWorkerDeployCmd())
-	cmd.AddCommand(newWorkerPushEnvCmd())
-	cmd.AddCommand(newWorkerDiagnoseCmd())
-	cmd.AddCommand(newWorkerDiagnoseExternalCmd())
-	cmd.AddCommand(newWorkerCheckRemoteVersionCmd())
-	cmd.AddCommand(newWorkerLogsCmd())
+	cmd.AddCommand(newWorkerReleaseCmd())
 	return cmd
 }
