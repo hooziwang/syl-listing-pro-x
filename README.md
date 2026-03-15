@@ -81,13 +81,21 @@ make
 `Makefile` 行为：
 
 - `make test`：执行 `go test ./...`
-- `make build`：生成 `bin/syl-listing-pro-x`
-- `make`：先测试，再构建
+- `make build`：生成带版本信息的 `bin/syl-listing-pro-x`
+- `make install`：安装到 `GOBIN` 或 `GOPATH/bin`
+- `make`：先测试、再构建、最后安装
 
 产物路径：
 
 ```bash
 bin/syl-listing-pro-x
+```
+
+查看版本：
+
+```bash
+syl-listing-pro-x --version
+syl-listing-pro-x version
 ```
 
 ## 命令总览
